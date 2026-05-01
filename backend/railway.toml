@@ -5,6 +5,4 @@ buildCommand = "pip install -r requirements.txt && python manage.py collectstati
 [deploy]
 startCommand = "gunicorn configs.wsgi:application --bind 0.0.0.0:$PORT"
 restartPolicyType = "ON_FAILURE"
-
-[deploy.numReplicas]
-value = 1
+numReplicas = 1

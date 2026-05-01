@@ -5,6 +5,4 @@ buildCommand = "npm install && npm run build"
 [deploy]
 startCommand = "npm run start"
 restartPolicyType = "ON_FAILURE"
-
-[deploy.numReplicas]
-value = 1
+numReplicas = 1
