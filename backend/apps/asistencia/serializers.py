@@ -2,6 +2,8 @@ from rest_framework import serializers
 from .models import Asistencia
 
 class AsistenciaSerializer(serializers.ModelSerializer):
+    nombre_empleado = serializers.CharField(source='empleado.nombre', read_only=True)
+    nombre_sucursal = serializers.CharField(source='sucursal.nombre', read_only=True)
     class Meta:
         model = Asistencia
         fields = '__all__'

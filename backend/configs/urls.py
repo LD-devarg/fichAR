@@ -20,7 +20,7 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
-from apps.sueldos.views import LiquidacionViewSet, LiquidacionDetalleHorasViewSet
+from apps.sueldos.views import LiquidacionViewSet, LiquidacionDetalleHorasViewSet, LiquidacionConceptoViewSet
 from apps.asistencia.views import AsistenciaViewSet
 from apps.core.views import DiaSemanaViewSet
 from apps.horarios.views import HorarioViewSet
@@ -31,6 +31,7 @@ api_router = DefaultRouter()
 # Rutas de Sueldos (RRHH, recibos, botones mágicos)
 api_router.register(r'sueldos/liquidaciones', LiquidacionViewSet, basename='liquidacion')
 api_router.register(r'sueldos/detalles', LiquidacionDetalleHorasViewSet, basename='liquidacion-detalle')
+api_router.register(r'sueldos/conceptos', LiquidacionConceptoViewSet, basename='liquidacion-concepto')
 
 # Rutas de Operadores (Fichadas, marcadores de entrada/salida)
 api_router.register(r'asistencia', AsistenciaViewSet, basename='asistencia')

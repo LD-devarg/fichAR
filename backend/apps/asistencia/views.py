@@ -17,10 +17,21 @@ class AsistenciaViewSet(viewsets.ModelViewSet):
         user = self.request.user
         qs = scope_queryset_to_user_empresa(Asistencia.objects.all(), user)
 
-        if user.is_superuser or user.groups.filter(name='Admin').exists():
-            return qs
+        if not (user.is_superuser or user.groups.filter(name='Admin').exists()):
+            qs = qs.filter(empleado=user)
 
-        return qs.filter(empleado=user)
+        start_date = self.request.query_params.get('start_date')
+        end_date = self.request.query_params.get('end_date')
+        fecha = self.request.query_params.get('fecha')
+
+        if fecha:
+            qs = qs.filter(fecha_hora__date=fecha)
+        if start_date:
+            qs = qs.filter(fecha_hora__date__gte=start_date)
+        if end_date:
+            qs = qs.filter(fecha_hora__date__lte=end_date)
+
+        return qs
 
     def perform_create(self, serializer):
         empresa = self.request.user.empresa

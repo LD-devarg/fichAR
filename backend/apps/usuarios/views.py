@@ -30,16 +30,24 @@ class UsuarioViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
     def perform_create(self, serializer):
-        if self.request.user.is_superuser:
-            serializer.save()
-            return
-        serializer.save(empresa=self.request.user.empresa)
+        empresa = self.request.user.empresa
+        if self.request.user.is_superuser and not empresa:
+            from apps.empresa.models import Empresa
+            empresa = Empresa.objects.first()
+        serializer.save(empresa=empresa)
 
     def perform_update(self, serializer):
-        if self.request.user.is_superuser:
-            serializer.save()
-            return
-        serializer.save(empresa=self.request.user.empresa)
+        empresa = self.request.user.empresa
+        if self.request.user.is_superuser and not empresa:
+            from apps.empresa.models import Empresa
+            empresa = Empresa.objects.first()
+            
+        # We only assign empresa if it doesn't have one or if we are forcing it, 
+        # but for updates it's better to keep the existing empresa if the user already has one.
+        if serializer.instance.empresa:
+            empresa = serializer.instance.empresa
+            
+        serializer.save(empresa=empresa)
 
 
 class ConfiguracionLaboralViewSet(viewsets.ModelViewSet):

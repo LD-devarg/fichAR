@@ -5,15 +5,23 @@ import {
   Button,
   Checkbox,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   FormControlLabel,
+  IconButton,
   Tab,
   Tabs,
   TextField,
+  MenuItem,
 } from '@mui/material';
 import {
   BuildingStorefrontIcon,
+  PencilSquareIcon,
   UserPlusIcon,
   UsersIcon,
+  XMarkIcon,
 } from '@heroicons/react/24/outline';
 
 import api from '../services/api';
@@ -21,7 +29,7 @@ import api from '../services/api';
 function TabPanel(props) {
   const { children, value, index, ...other } = props;
   return (
-    <div role="tabpanel" hidden={value !== index} {...other} className={value === index ? 'py-6' : ''}>
+    <div role="tabpanel" hidden={value !== index} {...other} className={value === index ? 'py-4' : ''}>
       {value === index && children}
     </div>
   );
@@ -62,6 +70,8 @@ export default function AdminPanel() {
   const [usuarioForm, setUsuarioForm] = useState(initialUsuarioForm);
   const [sucursalMessage, setSucursalMessage] = useState(null);
   const [usuarioMessage, setUsuarioMessage] = useState(null);
+  const [usuarioDialogOpen, setUsuarioDialogOpen] = useState(false);
+  const [editingUsuario, setEditingUsuario] = useState(null);
 
   const fetchPanelData = async () => {
     try {
@@ -119,6 +129,54 @@ export default function AdminPanel() {
     });
   };
 
+  const selectDiasDeSemana = () => {
+    const ids = diasSemana
+      .filter(d => !d.dia.toLowerCase().includes('sabado') && !d.dia.toLowerCase().includes('sábado') && !d.dia.toLowerCase().includes('domingo'))
+      .map(d => d.id);
+    setUsuarioForm(cur => ({ ...cur, dias_laborales: ids }));
+  };
+
+  const selectFinDeSemana = () => {
+    const ids = diasSemana
+      .filter(d => d.dia.toLowerCase().includes('sabado') || d.dia.toLowerCase().includes('sábado') || d.dia.toLowerCase().includes('domingo'))
+      .map(d => d.id);
+    setUsuarioForm(cur => ({ ...cur, dias_laborales: ids }));
+  };
+
+  const selectTodosLosDias = () => {
+    setUsuarioForm(cur => ({ ...cur, dias_laborales: diasSemana.map(d => d.id) }));
+  };
+
+  const closeUsuarioDialog = () => {
+    if (submittingUsuario) return;
+    setUsuarioDialogOpen(false);
+    setUsuarioForm(initialUsuarioForm);
+    setEditingUsuario(null);
+  };
+
+  const openCreateUsuarioDialog = () => {
+    setUsuarioMessage(null);
+    setEditingUsuario(null);
+    setUsuarioForm(initialUsuarioForm);
+    setUsuarioDialogOpen(true);
+  };
+
+  const openEditUsuarioDialog = (usuario) => {
+    setUsuarioMessage(null);
+    setEditingUsuario(usuario);
+    setUsuarioForm({
+      username: usuario.username || '',
+      nombre: usuario.nombre || '',
+      email: usuario.email || '',
+      password: '',
+      rol: usuario.nombres_grupos?.[0] || 'Empleado',
+      valor_hora: usuario.configuracion_laboral?.valor_hora ?? '',
+      turno_preferido: usuario.configuracion_laboral?.turno_preferido || 'Indiferente',
+      dias_laborales: usuario.configuracion_laboral?.dias_laborales || [],
+    });
+    setUsuarioDialogOpen(true);
+  };
+
   const handleUsuarioSubmit = async (event) => {
     event.preventDefault();
     setSubmittingUsuario(true);
@@ -128,7 +186,6 @@ export default function AdminPanel() {
       username: usuarioForm.username,
       nombre: usuarioForm.nombre,
       email: usuarioForm.email,
-      password: usuarioForm.password,
       is_active: true,
       rol: usuarioForm.rol,
       configuracion_laboral: {
@@ -138,11 +195,27 @@ export default function AdminPanel() {
       },
     };
 
+    if (usuarioForm.password) {
+      payload.password = usuarioForm.password;
+    }
+
     try {
-      const { data } = await api.post('usuarios/', payload);
-      setUsuarios((current) => [...current, data].sort((a, b) => a.nombre.localeCompare(b.nombre)));
+      const { data } = editingUsuario
+        ? await api.patch(`usuarios/${editingUsuario.id}/`, payload)
+        : await api.post('usuarios/', payload);
+      setUsuarios((current) => {
+        const next = editingUsuario
+          ? current.map((usuario) => (usuario.id === data.id ? data : usuario))
+          : [...current, data];
+        return next.sort((a, b) => a.nombre.localeCompare(b.nombre));
+      });
       setUsuarioForm(initialUsuarioForm);
-      setUsuarioMessage({ type: 'success', text: 'Usuario y configuración laboral creados.' });
+      setUsuarioDialogOpen(false);
+      setEditingUsuario(null);
+      setUsuarioMessage({
+        type: 'success',
+        text: editingUsuario ? 'Usuario actualizado correctamente.' : 'Usuario y configuración laboral creados.',
+      });
     } catch (error) {
       const detail = error.response?.data;
       let text = 'No se pudo crear el usuario.';
@@ -162,9 +235,7 @@ export default function AdminPanel() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto py-2">
-      <h1 className="mb-6 text-3xl font-light tracking-tight text-gray-900">Panel de Gestión</h1>
-
+    <div className="w-full h-full py-2 px-4 md:px-6">
       <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
         <Tabs
           value={tabIndex}
@@ -177,7 +248,6 @@ export default function AdminPanel() {
         >
           <Tab label="Sucursales" />
           <Tab label="Usuarios" />
-          <Tab label="Planificador" />
         </Tabs>
       </Box>
 
@@ -206,7 +276,7 @@ export default function AdminPanel() {
                   </Alert>
                 )}
 
-                <form className="space-y-4" onSubmit={handleSucursalSubmit}>
+                <form className="flex flex-col gap-3" onSubmit={handleSucursalSubmit}>
                   <TextField
                     label="Nombre"
                     fullWidth
@@ -243,15 +313,15 @@ export default function AdminPanel() {
                 </div>
 
                 {sucursales.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-5 py-10 text-center text-sm text-gray-500">
+                  <div className="border-y border-dashed border-gray-200 px-5 py-10 text-center text-sm text-gray-500">
                     Todavía no hay sucursales cargadas.
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                     {sucursales.map((suc) => (
                       <article key={suc.id} className="rounded-2xl border border-gray-200 bg-gray-50/70 p-5">
-                        <h3 className="mt-2 text-lg font-medium text-gray-900">{suc.nombre}</h3>
-                        <p className="mt-2 text-sm text-gray-500">{suc.direccion}</p>
+                        <h3 className=" text-lg font-bold text-gray-900 ">{suc.nombre}</h3>
+                        <p className="mt-1 text-sm italic text-gray-500">{suc.direccion}</p>
                       </article>
                     ))}
                   </div>
@@ -261,8 +331,8 @@ export default function AdminPanel() {
           </TabPanel>
 
           <TabPanel value={tabIndex} index={1}>
-            <div className="grid grid-cols-1 gap-6 xl:grid-cols-[28rem_minmax(0,1fr)]">
-              <section className="rounded-[28px] border border-gray-200 bg-white p-6 shadow-sm">
+            <div className="grid grid-cols-1 gap-6">
+              <section className="hidden">
                 <div className="mb-5 flex items-center gap-3">
                   <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gray-950 text-white">
                     <UserPlusIcon className="h-5 w-5" />
@@ -279,7 +349,7 @@ export default function AdminPanel() {
                   </Alert>
                 )}
 
-                <form className="space-y-4" onSubmit={handleUsuarioSubmit}>
+                <form className="flex flex-col gap-3" onSubmit={handleUsuarioSubmit}>
                   <TextField
                     label="Username"
                     fullWidth
@@ -314,12 +384,11 @@ export default function AdminPanel() {
                     select
                     fullWidth
                     label="Rol"
-                    SelectProps={{ native: true }}
                     value={usuarioForm.rol}
                     onChange={(e) => setUsuarioForm((current) => ({ ...current, rol: e.target.value }))}
                   >
-                    <option value="Empleado">Empleado</option>
-                    <option value="Admin">Admin</option>
+                    <MenuItem value="Empleado">Empleado</MenuItem>
+                    <MenuItem value="Admin">Admin</MenuItem>
                   </TextField>
                   <TextField
                     label="Valor hora"
@@ -333,29 +402,37 @@ export default function AdminPanel() {
                     select
                     fullWidth
                     label="Turno preferido"
-                    SelectProps={{ native: true }}
                     value={usuarioForm.turno_preferido}
                     onChange={(e) => setUsuarioForm((current) => ({ ...current, turno_preferido: e.target.value }))}
                   >
                     {turnoOptions.map((option) => (
-                      <option key={option} value={option}>{option}</option>
+                      <MenuItem key={option} value={option}>{option}</MenuItem>
                     ))}
                   </TextField>
 
                   <div>
-                    <p className="mb-2 text-sm font-medium text-gray-700">Días laborables</p>
-                    <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                    <div className="flex flex-col mb-2 gap-2">
+                      <p className="text-sm font-medium text-gray-700">Días laborables</p>
+                      <div className="flex flex-wrap gap-2">
+                        <Button size="small" variant="outlined" onClick={selectDiasDeSemana} sx={{ textTransform: 'none', borderRadius: '8px', py: 0.2, fontSize: '0.75rem' }}>Días de semana</Button>
+                        <Button size="small" variant="outlined" onClick={selectFinDeSemana} sx={{ textTransform: 'none', borderRadius: '8px', py: 0.2, fontSize: '0.75rem' }}>Fin de semana</Button>
+                        <Button size="small" variant="outlined" onClick={selectTodosLosDias} sx={{ textTransform: 'none', borderRadius: '8px', py: 0.2, fontSize: '0.75rem' }}>Todos</Button>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-x-4 gap-y-0">
                       {diasSemana.map((dia) => (
                         <FormControlLabel
                           key={dia.id}
                           control={
                             <Checkbox
+                              size="small"
                               checked={usuarioForm.dias_laborales.includes(dia.id)}
                               onChange={() => toggleDiaLaboral(dia.id)}
-                              sx={{ color: '#111111', '&.Mui-checked': { color: '#111111' } }}
+                              sx={{ color: '#111111', '&.Mui-checked': { color: '#111111' }, padding: '4px' }}
                             />
                           }
-                          label={dia.dia}
+                          label={<span className="text-sm">{dia.dia}</span>}
+                          sx={{ margin: 0, paddingRight: '8px' }}
                         />
                       ))}
                     </div>
@@ -374,36 +451,62 @@ export default function AdminPanel() {
                 </form>
               </section>
 
-              <section className="rounded-[28px] border border-gray-200 bg-white p-6 shadow-sm">
-                <div className="mb-6 flex items-center gap-3">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gray-100 text-gray-700">
-                    <UsersIcon className="h-5 w-5" />
-                  </div>
+              <section className="w-full">
+                <div className="mb-4 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
                   <div>
-                    <h2 className="text-xl font-light text-gray-900">Usuarios activos</h2>
-                    <p className="text-sm text-gray-500">{usuarios.length} usuarios visibles en esta empresa.</p>
+                    <h2 className="text-lg font-medium text-gray-900">Usuarios activos</h2>
+                    <p className="text-xs text-gray-500">{usuarios.length} usuarios visibles en esta empresa.</p>
                   </div>
+                  <Button
+                    variant="contained"
+                    disableElevation
+                    startIcon={<UserPlusIcon className="h-5 w-5" />}
+                    onClick={openCreateUsuarioDialog}
+                    sx={{ bgcolor: '#111111', '&:hover': { bgcolor: '#000000' }, textTransform: 'none', borderRadius: '10px', px: 2, py: 0.9, fontSize: '0.875rem' }}
+                  >
+                    Crear usuario
+                  </Button>
                 </div>
 
+                {usuarioMessage && (
+                  <Alert severity={usuarioMessage.type} sx={{ mb: 2 }}>
+                    {usuarioMessage.text}
+                  </Alert>
+                )}
+
                 {usuarios.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-5 py-10 text-center text-sm text-gray-500">
+                  <div className="border-y border-dashed border-gray-200 px-5 py-10 text-center text-sm text-gray-500">
                     Todavía no hay usuarios cargados.
                   </div>
                 ) : (
-                  <div className="space-y-4">
-                    {usuarios.map((usuario) => (
-                      <article key={usuario.id} className="rounded-2xl border border-gray-200 bg-gray-50/70 p-5">
-                        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div className="w-full border-t border-gray-200 pt-1">
+                    <div className="max-h-[calc(100vh-350px)] overflow-y-auto pr-2 pb-2" style={{ scrollbarWidth: 'thin' }}>
+                      {usuarios.map((usuario) => (
+                        <article key={usuario.id} className="border-b border-gray-200 py-2">
+                        <div className="grid grid-cols-1 gap-2 text-sm md:grid-cols-[1.35fr_0.75fr_0.9fr_0.7fr_auto] md:items-center">
                           <div>
-                            <h3 className="text-lg font-medium text-gray-900">{usuario.nombre}</h3>
-                            <p className="text-sm text-gray-500">@{usuario.username} · {usuario.email}</p>
+                            <h3 className="truncate text-sm font-semibold text-gray-950">{usuario.nombre}</h3>
                           </div>
-                          <div className="rounded-full bg-white px-3 py-1 text-xs uppercase tracking-[0.22em] text-gray-500">
-                            {usuario.nombres_grupos?.[0] || 'Sin rol'}
+                          <div>
+                            <p className="text-[10px] uppercase tracking-[0.14em] text-gray-400">Valor hora</p>
+                            <p className="text-sm text-gray-700">{usuario.configuracion_laboral?.valor_hora ?? '0.00'}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] uppercase tracking-[0.14em] text-gray-400">Turno</p>
+                            <p className="text-sm text-gray-700">{usuario.configuracion_laboral?.turno_preferido || 'Indiferente'}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] uppercase tracking-[0.14em] text-gray-400">Estado</p>
+                            <p className="text-sm text-gray-700">{usuario.is_active ? 'Activo' : 'Inactivo'}</p>
+                          </div>
+                          <div className="flex justify-end">
+                            <IconButton size="small" onClick={() => openEditUsuarioDialog(usuario)} aria-label={`Editar ${usuario.nombre}`}>
+                              <PencilSquareIcon className="h-4 w-4 text-gray-500" />
+                            </IconButton>
                           </div>
                         </div>
 
-                        <div className="mt-4 grid grid-cols-1 gap-3 text-sm text-gray-600 md:grid-cols-3">
+                        <div className="hidden">
                           <div>
                             <p className="text-xs uppercase tracking-[0.22em] text-gray-400">Valor hora</p>
                             <p className="mt-1">{usuario.configuracion_laboral?.valor_hora ?? '0.00'}</p>
@@ -418,34 +521,171 @@ export default function AdminPanel() {
                           </div>
                         </div>
 
-                        <div className="mt-4 flex flex-wrap gap-2">
+                        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-gray-500">
                           {(usuario.configuracion_laboral?.dias_laborales || []).length > 0 ? (
                             usuario.configuracion_laboral.dias_laborales.map((diaId) => {
                               const dia = diasSemana.find((item) => item.id === diaId);
                               return (
-                                <span key={diaId} className="rounded-full bg-white px-3 py-1 text-xs text-gray-500">
+                                <span key={diaId}>
                                   {dia?.dia || `Dia #${diaId}`}
                                 </span>
                               );
                             })
                           ) : (
-                            <span className="rounded-full bg-white px-3 py-1 text-xs text-gray-500">
+                            <span>
                               Sin días configurados
                             </span>
                           )}
                         </div>
                       </article>
                     ))}
+                    </div>
                   </div>
                 )}
               </section>
             </div>
-          </TabPanel>
 
-          <TabPanel value={tabIndex} index={2}>
-            <div className="rounded-[28px] border border-gray-200 bg-white p-10 text-center text-gray-500 shadow-sm">
-              El planificador queda para la siguiente iteración. Ahora el panel ya permite crear sucursales y usuarios con configuración laboral.
-            </div>
+            <Dialog
+              open={usuarioDialogOpen}
+              onClose={closeUsuarioDialog}
+              fullWidth
+              maxWidth="md"
+              PaperProps={{ sx: { borderRadius: '28px' } }}
+            >
+              <DialogTitle sx={{ p: 0 }}>
+                <div className="flex items-start justify-between gap-4 border-b border-gray-100 px-6 py-5">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-950 text-white">
+                      <UserPlusIcon className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h2 className="text-xl font-light text-gray-900">{editingUsuario ? 'Editar usuario' : 'Nuevo usuario'}</h2>
+                      <p className="text-sm text-gray-500">
+                        {editingUsuario ? 'Actualiza datos y configuracion laboral.' : 'Alta de usuario junto con configuracion laboral.'}
+                      </p>
+                    </div>
+                  </div>
+                  <IconButton onClick={closeUsuarioDialog} disabled={submittingUsuario}>
+                    <XMarkIcon className="h-5 w-5" />
+                  </IconButton>
+                </div>
+              </DialogTitle>
+
+              <form onSubmit={handleUsuarioSubmit}>
+                <DialogContent sx={{ p: 3 }}>
+                  {usuarioMessage?.type === 'error' && (
+                    <Alert severity="error" sx={{ mb: 2 }}>
+                      {usuarioMessage.text}
+                    </Alert>
+                  )}
+
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <TextField
+                      label="Username"
+                      fullWidth
+                      value={usuarioForm.username}
+                      onChange={(e) => setUsuarioForm((current) => ({ ...current, username: e.target.value }))}
+                      required
+                    />
+                    <TextField
+                      label="Nombre completo"
+                      fullWidth
+                      value={usuarioForm.nombre}
+                      onChange={(e) => setUsuarioForm((current) => ({ ...current, nombre: e.target.value }))}
+                      required
+                    />
+                    <TextField
+                      label="Email"
+                      type="email"
+                      fullWidth
+                      value={usuarioForm.email}
+                      onChange={(e) => setUsuarioForm((current) => ({ ...current, email: e.target.value }))}
+                      required
+                    />
+                    <TextField
+                      label="Contrasena"
+                      type="password"
+                      fullWidth
+                      value={usuarioForm.password}
+                      onChange={(e) => setUsuarioForm((current) => ({ ...current, password: e.target.value }))}
+                      required={!editingUsuario}
+                    />
+                    <TextField
+                      select
+                      fullWidth
+                      label="Rol"
+                      value={usuarioForm.rol}
+                      onChange={(e) => setUsuarioForm((current) => ({ ...current, rol: e.target.value }))}
+                    >
+                      <MenuItem value="Empleado">Empleado</MenuItem>
+                      <MenuItem value="Admin">Admin</MenuItem>
+                    </TextField>
+                    <TextField
+                      label="Valor hora"
+                      type="number"
+                      fullWidth
+                      value={usuarioForm.valor_hora}
+                      onChange={(e) => setUsuarioForm((current) => ({ ...current, valor_hora: e.target.value }))}
+                      inputProps={{ min: 0, step: '0.01' }}
+                    />
+                    <TextField
+                      select
+                      fullWidth
+                      label="Turno preferido"
+                      value={usuarioForm.turno_preferido}
+                      onChange={(e) => setUsuarioForm((current) => ({ ...current, turno_preferido: e.target.value }))}
+                    >
+                      {turnoOptions.map((option) => (
+                        <MenuItem key={option} value={option}>{option}</MenuItem>
+                      ))}
+                    </TextField>
+
+                    <div className="rounded-2xl border border-gray-200 bg-gray-50/70 px-4 py-3 md:col-span-2">
+                      <div className="flex flex-col md:flex-row md:items-center justify-between mb-3 gap-2">
+                        <p className="text-sm font-medium text-gray-700">Días laborables</p>
+                        <div className="flex flex-wrap gap-2">
+                          <Button size="small" variant="outlined" onClick={selectDiasDeSemana} sx={{ textTransform: 'none', borderRadius: '8px', py: 0.2, fontSize: '0.75rem', borderColor: '#d1d5db', color: '#4b5563', '&:hover': { borderColor: '#111111', color: '#111111', bgcolor: 'transparent' } }}>Días de semana</Button>
+                          <Button size="small" variant="outlined" onClick={selectFinDeSemana} sx={{ textTransform: 'none', borderRadius: '8px', py: 0.2, fontSize: '0.75rem', borderColor: '#d1d5db', color: '#4b5563', '&:hover': { borderColor: '#111111', color: '#111111', bgcolor: 'transparent' } }}>Fin de semana</Button>
+                          <Button size="small" variant="outlined" onClick={selectTodosLosDias} sx={{ textTransform: 'none', borderRadius: '8px', py: 0.2, fontSize: '0.75rem', borderColor: '#d1d5db', color: '#4b5563', '&:hover': { borderColor: '#111111', color: '#111111', bgcolor: 'transparent' } }}>Todos</Button>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-x-4 gap-y-0">
+                        {diasSemana.map((dia) => (
+                          <FormControlLabel
+                            key={dia.id}
+                            control={
+                              <Checkbox
+                                size="small"
+                                checked={usuarioForm.dias_laborales.includes(dia.id)}
+                                onChange={() => toggleDiaLaboral(dia.id)}
+                                sx={{ color: '#111111', '&.Mui-checked': { color: '#111111' }, padding: '4px' }}
+                              />
+                            }
+                            label={<span className="text-sm">{dia.dia}</span>}
+                            sx={{ margin: 0, paddingRight: '8px' }}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </DialogContent>
+
+                <DialogActions sx={{ px: 3, pb: 3, pt: 0 }}>
+                  <Button onClick={closeUsuarioDialog} disabled={submittingUsuario} sx={{ color: '#4b5563', textTransform: 'none' }}>
+                    Cancelar
+                  </Button>
+                  <Button
+                    type="submit"
+                    variant="contained"
+                    disableElevation
+                    disabled={submittingUsuario}
+                    sx={{ bgcolor: '#111111', '&:hover': { bgcolor: '#000000' }, textTransform: 'none', borderRadius: '10px', px: 3 }}
+                  >
+                    {submittingUsuario ? 'Guardando...' : editingUsuario ? 'Guardar cambios' : 'Crear usuario'}
+                  </Button>
+                </DialogActions>
+              </form>
+            </Dialog>
           </TabPanel>
         </>
       )}

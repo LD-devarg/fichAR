@@ -1,47 +1,45 @@
 from decimal import Decimal
+from datetime import datetime, date
 from collections import defaultdict
 from apps.sueldos.models import Liquidacion, LiquidacionDetalleHoras
-from apps.asistencia.models import Asistencia
+from apps.horarios.models import Horario
 
-def generar_detalle_horas_desde_fichadas(liquidacion):
+def generar_detalle_horas_desde_horarios(liquidacion):
     """
-    Toma una liquidación (que tiene fechas desde/hasta) y procesa las fichadas del empleado
+    Toma una liquidación (que tiene fechas desde/hasta) y procesa los horarios (turnos planificados) del empleado
     para generar el detalle de horas día por día, y luego recalcula los totales.
     """
     if liquidacion.estado != Liquidacion.Estado.BORRADOR:
-        raise ValueError("Solo se pueden regenerar las horas de una liquidación en estado BOORRADOR.")
+        raise ValueError("Solo se pueden regenerar las horas de una liquidación en estado BORRADOR.")
 
     # 1. Limpiamos los detalles de horas existentes
     liquidacion.detalle_horas.all().delete()
 
-    # 2. Obtenemos todas las fichadas del periodo
-    asistencias = Asistencia.objects.filter(
+    # 2. Obtenemos todos los turnos (horarios) del periodo
+    horarios = Horario.objects.filter(
         empleado=liquidacion.empleado,
         empresa=liquidacion.empresa,
-        fecha_hora__date__gte=liquidacion.fecha_desde,
-        fecha_hora__date__lte=liquidacion.fecha_hasta
-    ).order_by('fecha_hora')
+        fecha__gte=liquidacion.fecha_desde,
+        fecha__lte=liquidacion.fecha_hasta
+    ).order_by('fecha', 'hora_inicio')
 
-    # Agruparemos las horas trabajadas por fecha. Key: fecha, Value: {'horas': Decimal, 'sucursal': obj}
-    resumen_diario = defaultdict(lambda: {'horas': Decimal('0.00'), 'sucursal': None})
+    # Agruparemos las horas planificadas por fecha. Key: fecha, Value: {'horas': Decimal, 'sucursal': obj, 'horario_id': int}
+    resumen_diario = defaultdict(lambda: {'horas': Decimal('0.00'), 'sucursal': None, 'horario_id': None})
 
-    entrada_activa = None
+    # 3. Procesamos los turnos
+    for turno in horarios:
+        inicio = datetime.combine(date.min, turno.hora_inicio)
+        fin = datetime.combine(date.min, turno.hora_fin)
+        diferencia = fin - inicio
+        horas = Decimal(diferencia.total_seconds() / 3600.0)
+        
+        if horas < 0:
+            horas += Decimal('24.00')
 
-    # 3. Procesamos las fichadas cruzando (entrada -> salida)
-    for asis in asistencias:
-        if asis.tipo_fichada == 'entrada':
-            entrada_activa = asis
-        elif asis.tipo_fichada == 'salida' and entrada_activa:
-            # Calculamos la diferencia de tiempo en horas
-            diferencia = asis.fecha_hora - entrada_activa.fecha_hora
-            horas = Decimal(diferencia.total_seconds() / 3600.0)
-            
-            fecha = entrada_activa.fecha_hora.date()
-            resumen_diario[fecha]['horas'] += horas
-            resumen_diario[fecha]['sucursal'] = asis.sucursal
-            
-            # Reseteamos por si ingresa de vuelta en el mismo día
-            entrada_activa = None 
+        fecha = turno.fecha
+        resumen_diario[fecha]['horas'] += horas
+        resumen_diario[fecha]['sucursal'] = turno.sucursal
+        resumen_diario[fecha]['horario_id'] = turno.id
     
     # 4. Obtenemos el valor asignado por hora del empleado
     config = getattr(liquidacion.empleado, 'configuracion_laboral', None)
@@ -58,6 +56,7 @@ def generar_detalle_horas_desde_fichadas(liquidacion):
                     liquidacion=liquidacion,
                     fecha=fecha,
                     sucursal=datos['sucursal'],
+                    horario_id=datos['horario_id'],
                     horas=datos['horas'],
                     valor_hora=valor_hora,
                     subtotal=subtotal

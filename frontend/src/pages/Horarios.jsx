@@ -1,5 +1,5 @@
 import React, { useContext, useEffect, useState } from 'react';
-import { CircularProgress } from '@mui/material';
+import { CircularProgress, Autocomplete, TextField } from '@mui/material';
 import {
   BuildingStorefrontIcon,
   CalendarDaysIcon,
@@ -7,8 +7,14 @@ import {
   MapPinIcon,
   Squares2X2Icon,
   UsersIcon,
+  XMarkIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  TrashIcon,
+  PlusIcon,
 } from '@heroicons/react/24/outline';
 
+import { motion, AnimatePresence } from 'motion/react';
 import api from '../services/api';
 import { AuthContext } from '../context/auth-context';
 
@@ -33,24 +39,6 @@ const SHIFT_COLORS = [
   'bg-orange-100 text-orange-950 border-orange-200',
 ];
 
-function normalizeDayName(value) {
-  return (value || '')
-    .toString()
-    .trim()
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
-}
-
-function getDayMeta(turno) {
-  const normalized = normalizeDayName(turno.nombre_dia);
-  const byName = DAY_ORDER.find((day) => day.key === normalized);
-  if (byName) return byName;
-
-  const dayFromId = DAY_ORDER[(Number(turno.dia) || 1) - 1];
-  return dayFromId || DAY_ORDER[0];
-}
-
 function getMinutes(timeValue) {
   if (!timeValue) return 0;
   const [hours = '0', minutes = '0'] = timeValue.split(':');
@@ -68,12 +56,12 @@ function getShiftDuration(turno) {
   return (end - start) / 60;
 }
 
-function getWeekRangeLabel() {
+function getWeekRangeLabel(offsetWeeks = 0) {
   const today = new Date();
   const day = today.getDay();
   const diffToMonday = day === 0 ? -6 : 1 - day;
   const monday = new Date(today);
-  monday.setDate(today.getDate() + diffToMonday);
+  monday.setDate(today.getDate() + diffToMonday + (offsetWeeks * 7));
   const sunday = new Date(monday);
   sunday.setDate(monday.getDate() + 6);
 
@@ -85,9 +73,37 @@ function getWeekRangeLabel() {
   return `${fmt.format(monday)} al ${fmt.format(sunday)}`;
 }
 
+function getWeekDays(offsetWeeks = 0) {
+  const today = new Date();
+  const day = today.getDay();
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+  const monday = new Date(today);
+  monday.setDate(today.getDate() + diffToMonday + (offsetWeeks * 7));
+
+  const dates = {};
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    dates[DAY_ORDER[i].key] = {
+      display: `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}`,
+      iso: `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')}`
+    };
+  }
+  return dates;
+}
+
 function getEmployeeColor(name) {
   const seed = (name || 'empleado').split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
   return SHIFT_COLORS[seed % SHIFT_COLORS.length];
+}
+
+function getDayMeta(turno) {
+  if (!turno?.fecha) return DAY_ORDER[0];
+  const d = new Date(turno.fecha + 'T00:00:00');
+  const jsDay = d.getDay(); // 0=Sun, 1=Mon … 6=Sat
+  // DAY_ORDER starts Monday (index 0) … Sunday (index 6)
+  const idx = jsDay === 0 ? 6 : jsDay - 1;
+  return DAY_ORDER[idx] || DAY_ORDER[0];
 }
 
 function buildSucursales(horarios) {
@@ -118,10 +134,10 @@ function buildSucursales(horarios) {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-function groupTurnosByDay(turnos) {
+function groupTurnosByDay(turnos, weekDates) {
   return DAY_ORDER.reduce((acc, day) => {
     acc[day.key] = turnos
-      .filter((turno) => getDayMeta(turno).key === day.key)
+      .filter((turno) => turno.fecha === weekDates[day.key].iso)
       .sort((a, b) => getMinutes(a.hora_inicio) - getMinutes(b.hora_inicio));
     return acc;
   }, {});
@@ -157,24 +173,27 @@ function SummaryCard({ icon, label, value, helper }) {
   );
 }
 
-function ShiftBlock({ turno, showSucursal }) {
-  const empleado = turno.nombre_empleado || `Empleado #${turno.empleado}`;
+function ShiftBlock({ turno, showSucursal, onClick }) {
+  const empleado = turno.username_empleado || turno.nombre_empleado || `Empleado #${turno.empleado}`;
   const colorClass = getEmployeeColor(empleado);
 
   return (
-    <article className={`rounded-2xl border p-3 shadow-sm ${colorClass}`}>
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold">{empleado}</p>
-          <p className="mt-1 text-xs uppercase tracking-[0.22em] opacity-70">{formatHourRange(turno)}</p>
+    <article
+      onClick={onClick}
+      className={`rounded-md p-2 transition-all ${onClick ? 'cursor-pointer hover:opacity-80' : ''} ${colorClass.split(' ').filter(c => !c.startsWith('border-')).join(' ')}`}
+    >
+      <div className="flex items-start justify-between gap-1">
+        <div className="min-w-0">
+          <p className="text-[12px] font-semibold truncate leading-tight text-gray-900">{empleado}</p>
+          <p className="mt-1 text-[11px] opacity-80 leading-tight tracking-wide">{formatHourRange(turno)}</p>
         </div>
-        <span className="rounded-full bg-white/75 px-2 py-1 text-[11px] font-medium">
-          {getShiftDuration(turno).toFixed(1)} hs
+        <span className="shrink-0 text-[10px] font-medium opacity-70">
+          {getShiftDuration(turno).toFixed(1)}h
         </span>
       </div>
       {showSucursal && (
-        <p className="mt-3 flex items-center gap-1.5 text-xs opacity-75">
-          <MapPinIcon className="h-3.5 w-3.5" />
+        <p className="mt-1 flex items-center gap-1 text-[10px] opacity-75 truncate">
+          <MapPinIcon className="h-3 w-3 shrink-0" />
           {turno.nombre_sucursal || `Sucursal #${turno.sucursal}`}
         </p>
       )}
@@ -182,27 +201,19 @@ function ShiftBlock({ turno, showSucursal }) {
   );
 }
 
-function DayColumn({ day, turnos, emptyLabel, showSucursal }) {
+function DayCell({ turnos, emptyLabel, showSucursal, onEditShift }) {
   return (
-    <section className="flex min-h-[18rem] flex-col rounded-[28px] border border-gray-200 bg-white/95 p-4 shadow-sm">
-      <div className="mb-4 border-b border-gray-100 pb-3">
-        <p className="text-xs uppercase tracking-[0.28em] text-gray-400">{day.short}</p>
-        <h3 className="mt-1 text-lg font-light text-gray-950">{day.label}</h3>
-        <p className="mt-1 text-xs text-gray-500">{turnos.length} turnos</p>
-      </div>
-
-      <div className="flex flex-1 flex-col gap-3">
-        {turnos.length === 0 ? (
-          <div className="flex flex-1 items-center justify-center rounded-2xl border border-dashed border-gray-200 bg-gray-50/80 px-4 text-center text-sm text-gray-400">
-            {emptyLabel}
-          </div>
-        ) : (
-          turnos.map((turno) => (
-            <ShiftBlock key={turno.id} turno={turno} showSucursal={showSucursal} />
-          ))
-        )}
-      </div>
-    </section>
+    <div className="flex min-h-[140px] flex-col gap-2 rounded-lg border border-gray-100 bg-gray-50/40 p-2">
+      {turnos.length === 0 ? (
+        <div className="flex flex-1 items-center justify-center text-center text-[10px] text-gray-800">
+          {emptyLabel}
+        </div>
+      ) : (
+        turnos.map((turno) => (
+          <ShiftBlock key={turno.id} turno={turno} showSucursal={showSucursal} onClick={onEditShift ? () => onEditShift(turno) : undefined} />
+        ))
+      )}
+    </div>
   );
 }
 
@@ -210,88 +221,237 @@ export default function Horarios() {
   const { isAdmin } = useContext(AuthContext);
   const [horarios, setHorarios] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedSucursal, setSelectedSucursal] = useState(null);
+  const [weekOffset, setWeekOffset] = useState(0);
+  const [direction, setDirection] = useState(0);
+
+  const handleNextWeek = () => {
+    setDirection(1);
+    setWeekOffset(o => o + 1);
+  };
+
+  const handlePrevWeek = () => {
+    setDirection(-1);
+    setWeekOffset(o => o - 1);
+  };
+
+  const slideVariants = {
+    enter: (dir) => ({
+      x: dir > 0 ? 400 : -400,
+      opacity: 0,
+    }),
+    center: {
+      x: 0,
+      opacity: 1,
+    },
+    exit: (dir) => ({
+      x: dir > 0 ? -400 : 400,
+      opacity: 0,
+    }),
+  };
+
+  // Form & Modal state
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  // dayForm: { sucursal, fecha, rows: [{_key, id, empleado, hora_inicio, hora_fin}] }
+  const newRow = () => ({ _key: Math.random().toString(36).slice(2), id: null, empleado: '', hora_inicio: '', hora_fin: '' });
+  const [dayForm, setDayForm] = useState({ sucursal: '', fecha: '', rows: [newRow()] });
+  const [deletedIds, setDeletedIds] = useState([]);
+  const [formError, setFormError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  // API Data
+  const [empleadosList, setEmpleadosList] = useState([]);
+  const [diasList, setDiasList] = useState([]);
+  const [sucursalesList, setSucursalesList] = useState([]);
+
+  const fetchHorarios = async (startDate, endDate) => {
+    try {
+      setLoading(true);
+      const res = await api.get(`horarios/?start_date=${startDate}&end_date=${endDate}`);
+      setHorarios(res.data);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchAuxData = async () => {
+    try {
+      if (isAdmin) {
+        const [empleadosRes, diasRes, sucursalesRes] = await Promise.all([
+          api.get('usuarios/'),
+          api.get('core/dias-semana/'),
+          api.get('empresa/sucursales/'),
+        ]);
+        setEmpleadosList(empleadosRes.data);
+        setDiasList(diasRes.data);
+        setSucursalesList(sucursalesRes.data);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   useEffect(() => {
-    const fetchHorarios = async () => {
-      try {
-        const res = await api.get('horarios/');
-        setHorarios(res.data);
-      } catch (error) {
-        console.error(error);
-      } finally {
-        setLoading(false);
-      }
-    };
+    fetchAuxData();
+  }, [isAdmin]);
 
-    fetchHorarios();
-  }, []);
+  useEffect(() => {
+    const weekDates = getWeekDays(weekOffset);
+    const startDate = weekDates['lunes'].iso;
+    const endDate = weekDates['domingo'].iso;
+    fetchHorarios(startDate, endDate);
+  }, [weekOffset, isAdmin]);
+
+  const handleOpenModal = (turno = null) => {
+    setFormError('');
+    setDeletedIds([]);
+    if (turno) {
+      // Load the full day for this sucursal + fecha
+      const sameDayTurnos = horarios.filter(
+        t => t.sucursal === turno.sucursal && t.fecha === turno.fecha
+      );
+      setDayForm({
+        sucursal: turno.sucursal,
+        fecha: turno.fecha,
+        rows: sameDayTurnos.map(t => ({
+          _key: String(t.id),
+          id: t.id,
+          empleado: t.empleado,
+          hora_inicio: t.hora_inicio.slice(0, 5),
+          hora_fin: t.hora_fin.slice(0, 5),
+        })),
+      });
+    } else {
+      setDayForm({ sucursal: '', fecha: '', rows: [newRow()] });
+    }
+    setIsModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+  };
+
+  const updateRow = (key, field, value) => {
+    setDayForm(prev => ({
+      ...prev,
+      rows: prev.rows.map(r => r._key === key ? { ...r, [field]: value } : r),
+    }));
+  };
+
+  const addRow = () => setDayForm(prev => ({ ...prev, rows: [...prev.rows, newRow()] }));
+
+  const removeRow = (key) => {
+    const row = dayForm.rows.find(r => r._key === key);
+    if (row?.id) setDeletedIds(prev => [...prev, row.id]);
+    setDayForm(prev => ({ ...prev, rows: prev.rows.filter(r => r._key !== key) }));
+  };
+
+  // Returns true if the shift is overnight (fin <= inicio, treating 00:00 as midnight)
+  const isOvernight = (inicio, fin) => {
+    if (!inicio || !fin) return false;
+    const [h1, m1] = inicio.split(':').map(Number);
+    const [h2, m2] = fin.split(':').map(Number);
+    return (h2 * 60 + m2) < (h1 * 60 + m1);
+  };
+
+  const handleSaveTurno = async (e) => {
+    e.preventDefault();
+    setFormError('');
+    setSubmitting(true);
+    const { sucursal, fecha, rows } = dayForm;
+    const errors = [];
+
+    try {
+      // 1. Delete removed rows
+      await Promise.all(deletedIds.map(id => api.delete(`horarios/${id}/`).catch(() => { })));
+
+      // 2. Save rows sequentially to respect conflict checks
+      for (const row of rows) {
+        if (!row.empleado || !row.hora_inicio || !row.hora_fin) continue;
+        const payload = { empleado: row.empleado, sucursal, fecha, hora_inicio: row.hora_inicio, hora_fin: row.hora_fin };
+        try {
+          if (row.id) {
+            const res = await api.put(`horarios/${row.id}/`, payload);
+            setHorarios(prev => prev.map(t => t.id === row.id ? res.data : t));
+          } else {
+            const res = await api.post('horarios/', payload);
+            setHorarios(prev => [...prev, res.data]);
+          }
+        } catch (err) {
+          const data = err.response?.data;
+          const msg = data?.detail || Object.values(data || {}).flat().filter(v => typeof v === 'string').join(' · ') || 'Error al guardar un turno.';
+          errors.push(msg);
+        }
+      }
+
+      // 3. Remove deleted turnos from local state
+      if (deletedIds.length) {
+        setHorarios(prev => prev.filter(t => !deletedIds.includes(t.id)));
+      }
+
+      if (errors.length) {
+        setFormError(errors.join('\n'));
+      } else {
+        handleCloseModal();
+      }
+    } catch (err) {
+      setFormError('Error inesperado al guardar.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
 
   const sucursales = buildSucursales(horarios);
 
-  useEffect(() => {
-    if (!isAdmin || sucursales.length === 0) return;
-    if (selectedSucursal && sucursales.some((sucursal) => sucursal.id === selectedSucursal)) return;
-    setSelectedSucursal(sucursales[0].id);
-  }, [isAdmin, selectedSucursal, sucursales]);
+  const matricesList = isAdmin
+    ? sucursales
+    : [{ id: 'personal', name: 'Mi semana', turnos: horarios }];
 
-  const planillaActual = isAdmin
-    ? sucursales.find((sucursal) => sucursal.id === selectedSucursal) || null
-    : {
-        id: 'personal',
-        name: 'Mi semana',
-        turnos: horarios,
-      };
-
-  const turnosAgrupados = planillaActual ? groupTurnosByDay(planillaActual.turnos) : null;
-  const resumen = planillaActual ? buildSummary(planillaActual.turnos) : null;
-  const weekLabel = getWeekRangeLabel();
+  const weekLabel = getWeekRangeLabel(weekOffset);
+  const weekDates = getWeekDays(weekOffset);
 
   return (
-    <div className="max-w-[90rem] mx-auto py-2">
-      <section className="overflow-hidden rounded-[32px] border border-gray-200 bg-[linear-gradient(135deg,#ffffff_0%,#f6f7fb_50%,#eef2ff_100%)] shadow-sm">
-        <div className="border-b border-gray-200 px-6 py-5 md:px-8">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-            <div className="max-w-2xl">
-              <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white/85 px-3 py-1 text-xs uppercase tracking-[0.24em] text-gray-500">
-                <CalendarDaysIcon className="h-4 w-4" />
-                {weekLabel}
+    <div className="w-full h-full py-2 px-4 md:px-6">
+      <div className="w-full">
+        <div className="border-b border-gray-200 pb-3 mb-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center rounded border border-gray-200 bg-white overflow-hidden">
+                  <button
+                    onClick={handlePrevWeek}
+                    className="p-1.5 text-gray-500 hover:bg-gray-50 hover:text-gray-900 transition-colors"
+                  >
+                    <ChevronLeftIcon className="h-4 w-4" />
+                  </button>
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium uppercase tracking-wider text-gray-700 border-x border-gray-100">
+                    <CalendarDaysIcon className="h-3.5 w-3.5" />
+                    {weekLabel}
+                  </div>
+                  <button
+                    onClick={handleNextWeek}
+                    className="p-1.5 text-gray-500 hover:bg-gray-50 hover:text-gray-900 transition-colors"
+                  >
+                    <ChevronRightIcon className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <h1 className="text-xl font-medium tracking-tight text-gray-900">Planilla Horaria</h1>
+                  <span className="hidden text-xs text-gray-500 md:inline-block">
+                    {isAdmin ? 'Calendario semanal.' : 'Tu agenda semanal.'}
+                  </span>
+                </div>
               </div>
-              <h1 className="text-3xl font-light tracking-tight text-gray-950">Planilla Horaria</h1>
-              <p className="mt-2 text-sm text-gray-600">
-                {isAdmin
-                  ? 'Vista semanal por sucursal.'
-                  : 'Tu agenda semanal actual.'}
-              </p>
             </div>
 
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-              {isAdmin && sucursales.length > 0 && (
-                <div className="flex flex-wrap gap-2 rounded-2xl border border-gray-200 bg-white/85 p-2">
-                  {sucursales.map((sucursal) => {
-                    const active = sucursal.id === selectedSucursal;
-                    return (
-                      <button
-                        key={sucursal.id}
-                        type="button"
-                        onClick={() => setSelectedSucursal(sucursal.id)}
-                        className={`rounded-xl px-4 py-2 text-sm transition-colors ${
-                          active
-                            ? 'bg-gray-950 text-white shadow-sm'
-                            : 'text-gray-600 hover:bg-gray-100'
-                        }`}
-                      >
-                        {sucursal.name}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-
+            <div className="flex items-center gap-2">
               {isAdmin && (
                 <button
                   type="button"
-                  className="rounded-2xl bg-gray-950 px-5 py-3 text-sm font-medium text-white shadow-sm transition-colors hover:bg-black"
+                  onClick={() => handleOpenModal()}
+                  className="rounded-md bg-gray-900 px-3 py-1.5 text-[11px] font-medium text-white shadow-sm transition-colors hover:bg-black"
                 >
                   + Asignar turno
                 </button>
@@ -305,8 +465,8 @@ export default function Horarios() {
             <CircularProgress size={32} sx={{ color: '#111111' }} />
           </div>
         ) : horarios.length === 0 ? (
-          <div className="px-6 py-8 md:px-8">
-            <div className="mx-auto flex max-w-3xl items-center justify-between gap-4 rounded-[24px] border border-dashed border-gray-200 bg-white/85 px-5 py-5">
+          <div className="py-8">
+            <div className="mx-auto flex max-w-3xl items-center justify-between gap-4 rounded-2xl border border-dashed border-gray-200 bg-white px-5 py-5">
               <div className="flex items-center gap-4">
                 <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-100 text-gray-400">
                   <CalendarDaysIcon className="h-6 w-6" />
@@ -323,6 +483,7 @@ export default function Horarios() {
               {isAdmin && (
                 <button
                   type="button"
+                  onClick={() => handleOpenModal()}
                   className="shrink-0 rounded-2xl bg-gray-950 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-black"
                 >
                   + Asignar
@@ -331,97 +492,201 @@ export default function Horarios() {
             </div>
           </div>
         ) : (
-          <div className="px-6 py-6 md:px-8 md:py-8">
-            <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <SummaryCard
-                icon={Squares2X2Icon}
-                label="Turnos"
-                value={resumen?.turnos ?? 0}
-                helper={isAdmin ? 'Bloques visibles en la sucursal seleccionada.' : 'Turnos asignados en tu semana actual.'}
-              />
-              <SummaryCard
-                icon={ClockIcon}
-                label="Horas"
-                value={`${(resumen?.horas ?? 0).toFixed(1)} hs`}
-                helper="Suma estimada a partir de las franjas cargadas."
-              />
-              <SummaryCard
-                icon={UsersIcon}
-                label={isAdmin ? 'Personas' : 'Dias'}
-                value={isAdmin ? resumen?.empleados ?? 0 : resumen?.dias ?? 0}
-                helper={isAdmin ? 'Empleados distintos con cobertura en esta vista.' : 'Dias de la semana con al menos un turno asignado.'}
-              />
-              <SummaryCard
-                icon={BuildingStorefrontIcon}
-                label={isAdmin ? 'Sucursal' : 'Sucursales'}
-                value={
-                  isAdmin
-                    ? planillaActual?.name || 'Sin sucursal'
-                    : new Set(horarios.map((turno) => turno.nombre_sucursal || turno.sucursal)).size
-                }
-                helper={isAdmin ? 'La planilla siempre se enfoca en una sucursal por vez.' : 'Cantidad de sucursales donde tienes turnos esta semana.'}
-              />
-            </div>
-
-            {isAdmin && planillaActual && (
-              <div className="mb-8 rounded-[28px] border border-gray-200 bg-white/85 p-5 shadow-sm">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.26em] text-gray-400">Vista operativa</p>
-                    <h2 className="mt-2 text-2xl font-light text-gray-950">{planillaActual.name}</h2>
-                    <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-500">
-                      Cada columna representa un día. Dentro de cada bloque se ve directamente quién trabaja y en qué franja, sin separar horario y nombre en filas distintas.
-                    </p>
-                  </div>
-                  <div className="rounded-2xl bg-gray-50 px-4 py-3 text-sm text-gray-600">
-                    {resumen?.dias ?? 0} de 7 días con cobertura visible
-                  </div>
-                </div>
-              </div>
-            )}
-
-            <div className="hidden xl:grid xl:grid-cols-7 xl:gap-4">
-              {DAY_ORDER.map((day) => (
-                <DayColumn
-                  key={day.key}
-                  day={day}
-                  turnos={turnosAgrupados?.[day.key] || []}
-                  emptyLabel={isAdmin ? 'Sin cobertura cargada para este día.' : 'No tienes turnos este día.'}
-                  showSucursal={!isAdmin}
-                />
-              ))}
-            </div>
-
-            <div className="space-y-5 xl:hidden">
-              {DAY_ORDER.map((day) => (
-                <div key={day.key} className="rounded-[28px] border border-gray-200 bg-white p-5 shadow-sm">
-                  <div className="mb-4 flex items-center justify-between border-b border-gray-100 pb-3">
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.26em] text-gray-400">{day.short}</p>
-                      <h3 className="mt-1 text-xl font-light text-gray-950">{day.label}</h3>
+          <div className="py-2">
+            <div className="w-full overflow-x-auto pb-4">
+              <div className="min-w-[900px] overflow-hidden relative">
+                <AnimatePresence mode="popLayout" initial={false} custom={direction}>
+                  <motion.div
+                    key={weekOffset}
+                    custom={direction}
+                    variants={slideVariants}
+                    initial="enter"
+                    animate="center"
+                    exit="exit"
+                    transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                    className="w-full"
+                  >
+                    {/* Global Headers */}
+                    <div className="grid grid-cols-7 gap-3 mb-4">
+                      {DAY_ORDER.map((day) => (
+                        <div key={day.key} className="border-b border-gray-200 pb-2">
+                          <h3 className="text-[12px] font-medium text-gray-800 uppercase tracking-wide">
+                            {day.label} {weekDates[day.key].display}
+                          </h3>
+                        </div>
+                      ))}
                     </div>
-                    <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-500">
-                      {(turnosAgrupados?.[day.key] || []).length} turnos
-                    </span>
-                  </div>
 
-                  <div className="space-y-3">
-                    {(turnosAgrupados?.[day.key] || []).length === 0 ? (
-                      <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50/80 px-4 py-6 text-center text-sm text-gray-400">
-                        {isAdmin ? 'Sin cobertura cargada para este día.' : 'No tienes turnos este día.'}
-                      </div>
-                    ) : (
-                      (turnosAgrupados?.[day.key] || []).map((turno) => (
-                        <ShiftBlock key={turno.id} turno={turno} showSucursal={!isAdmin} />
-                      ))
-                    )}
-                  </div>
-                </div>
-              ))}
+                    {/* Sucursales Rows */}
+                    <div className="flex flex-col gap-2">
+                      {matricesList.map((matrix) => {
+                        const turnosAgrupados = groupTurnosByDay(matrix.turnos, weekDates);
+                        return (
+                          <div key={matrix.id} className="flex flex-col gap-2">
+                            {isAdmin && (
+                              <h4 className="text-[13px] font-semibold text-gray-800 uppercase tracking-wide">{matrix.name}</h4>
+                            )}
+                            <div className="grid grid-cols-7 gap-3">
+                              {DAY_ORDER.map((day) => (
+                                <DayCell
+                                  key={day.key}
+                                  turnos={turnosAgrupados[day.key] || []}
+                                  emptyLabel={isAdmin ? 'Sin cobertura cargada para este día.' : 'No tienes turnos este día.'}
+                                  showSucursal={!isAdmin}
+                                  onEditShift={isAdmin ? handleOpenModal : undefined}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </motion.div>
+                </AnimatePresence>
+              </div>
             </div>
           </div>
         )}
-      </section>
+
+        {isModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/40 backdrop-blur-sm">
+            <div className="bg-white rounded-[24px] shadow-xl w-full max-w-lg overflow-hidden">
+              {/* Header */}
+              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+                <h3 className="text-lg font-medium text-gray-900">Asignar turno del día</h3>
+                <button type="button" onClick={handleCloseModal} className="text-gray-400 hover:text-gray-600 transition-colors">
+                  <XMarkIcon className="w-5 h-5" />
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveTurno}>
+                {/* Sucursal + Fecha */}
+                <div className="px-6 pt-5 pb-3 grid grid-cols-2 gap-3">
+                  <Autocomplete
+                    options={sucursalesList}
+                    getOptionLabel={(opt) => opt.nombre || ''}
+                    value={sucursalesList.find(s => String(s.id) === String(dayForm.sucursal)) || null}
+                    onChange={(_, v) => setDayForm(prev => ({ ...prev, sucursal: v?.id || '' }))}
+                    renderInput={(params) => (
+                      <TextField {...params} label="Sucursal" required size="small"
+                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: '10px', backgroundColor: '#f9fafb', fontSize: '13px' }, '& .MuiInputLabel-root': { fontSize: '13px' } }}
+                      />
+                    )}
+                    noOptionsText="Sin resultados"
+                    isOptionEqualToValue={(o, v) => o.id === v.id}
+                  />
+                  <TextField
+                    label="Fecha" type="date" required size="small"
+                    value={dayForm.fecha}
+                    onChange={e => setDayForm(prev => ({ ...prev, fecha: e.target.value }))}
+                    InputLabelProps={{ shrink: true }}
+                    sx={{ '& .MuiOutlinedInput-root': { borderRadius: '10px', backgroundColor: '#f9fafb', fontSize: '13px' }, '& .MuiInputLabel-root': { fontSize: '13px' } }}
+                  />
+                </div>
+
+                {/* Column headers */}
+                <div className="px-6 pb-1">
+                  <div className="grid grid-cols-[1fr_90px_90px_32px] gap-2 items-center">
+                    <p className="text-[10px] uppercase tracking-wider font-semibold text-gray-400">Empleado</p>
+                    <p className="text-[10px] uppercase tracking-wider font-semibold text-gray-400">Ingreso</p>
+                    <p className="text-[10px] uppercase tracking-wider font-semibold text-gray-400">Salida</p>
+                    <span />
+                  </div>
+                </div>
+
+                {/* Rows */}
+                <div className="px-6 space-y-3 max-h-[340px] overflow-y-auto py-4">
+                  {dayForm.rows.map((row) => {
+                    const overnight = isOvernight(row.hora_inicio, row.hora_fin);
+                    return (
+                      <div key={row._key} className="grid grid-cols-[1fr_90px_90px_32px] gap-4 items-center pt-2.5">
+                        <Autocomplete
+                          options={empleadosList}
+                          getOptionLabel={(opt) => opt.nombre || opt.username || ''}
+                          value={empleadosList.find(e => String(e.id) === String(row.empleado)) || null}
+                          onChange={(_, v) => updateRow(row._key, 'empleado', v?.id || '')}
+                          size="small"
+                          renderInput={(params) => (
+                            <TextField {...params} placeholder="Empleado" size="small"
+                              sx={{ '& .MuiOutlinedInput-root': { borderRadius: '10px', backgroundColor: '#f9fafb', fontSize: '13px' } }}
+                            />
+                          )}
+                          noOptionsText="Sin resultados"
+                          isOptionEqualToValue={(o, v) => o.id === v.id}
+                        />
+                        <input
+                          type="time"
+                          value={row.hora_inicio}
+                          onChange={e => updateRow(row._key, 'hora_inicio', e.target.value)}
+                          className="w-full px-2 py-2 rounded-[10px] border border-gray-200 text-sm bg-gray-50 focus:ring-2 focus:ring-gray-900 focus:outline-none"
+                        />
+                        <div className="relative">
+                          <input
+                            type="time"
+                            value={row.hora_fin}
+                            onChange={e => updateRow(row._key, 'hora_fin', e.target.value)}
+                            className={`w-full px-2 py-2 rounded-[10px] border text-sm bg-gray-50 focus:ring-2 focus:ring-gray-900 focus:outline-none ${overnight ? 'border-amber-300' : 'border-gray-200'}`}
+                          />
+                          {overnight && (
+                            <span className="absolute -top-2.5 -right-1 text-[9px] font-bold bg-amber-400 text-amber-900 px-1 rounded-full leading-none py-0.5 shadow-sm border border-amber-300">
+                              +1
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeRow(row._key)}
+                          disabled={dayForm.rows.length === 1 && !row.id}
+                          className="flex items-center justify-center text-gray-300 hover:text-red-500 transition-colors"
+                        >
+                          <TrashIcon className="w-4 h-4" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Add row */}
+                <div className="px-6 pt-2">
+                  <button
+                    type="button"
+                    onClick={addRow}
+                    className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-800 transition-colors"
+                  >
+                    <PlusIcon className="w-3.5 h-3.5" /> Agregar empleado
+                  </button>
+                </div>
+
+                {/* Error */}
+                {formError && (
+                  <div className="mx-6 mt-3 p-3 rounded-xl bg-red-50 text-red-600 text-xs border border-red-100 whitespace-pre-line">
+                    {formError}
+                  </div>
+                )}
+
+                {/* Footer */}
+                <div className="flex justify-end gap-2 px-6 py-4 mt-2 border-t border-gray-100">
+                  <button
+                    type="button" onClick={handleCloseModal} disabled={submitting}
+                    className="px-4 py-2 rounded-xl text-sm text-gray-600 font-medium hover:bg-gray-100 transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit" disabled={submitting}
+                    className="px-5 py-2 rounded-xl bg-gray-900 text-white text-sm font-medium hover:bg-black transition-colors flex items-center gap-1.5"
+                  >
+                    {submitting ? <span className="btn-spinner" /> : null}
+                    {submitting ? 'Guardando...' : 'Guardar'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+      </div>
     </div>
   );
 }
+
