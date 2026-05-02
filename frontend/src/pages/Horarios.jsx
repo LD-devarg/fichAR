@@ -180,20 +180,20 @@ function ShiftBlock({ turno, showSucursal, onClick }) {
   return (
     <article
       onClick={onClick}
-      className={`rounded-md p-2 transition-all ${onClick ? 'cursor-pointer hover:opacity-80' : ''} ${colorClass.split(' ').filter(c => !c.startsWith('border-')).join(' ')}`}
+      className={`rounded-md p-1.5 transition-all ${onClick ? 'cursor-pointer hover:opacity-80' : ''} ${colorClass.split(' ').filter(c => !c.startsWith('border-')).join(' ')}`}
     >
       <div className="flex items-start justify-between gap-1">
         <div className="min-w-0">
-          <p className="text-[12px] font-semibold truncate leading-tight text-gray-900">{empleado}</p>
-          <p className="mt-1 text-[11px] opacity-80 leading-tight tracking-wide">{formatHourRange(turno)}</p>
+          <p className="text-[11px] font-semibold truncate leading-tight text-gray-900">{empleado}</p>
+          <p className="mt-0.5 text-[10px] opacity-80 leading-tight tracking-wide">{formatHourRange(turno)}</p>
         </div>
-        <span className="shrink-0 text-[10px] font-medium opacity-70">
+        <span className="shrink-0 text-[9px] font-medium opacity-70">
           {getShiftDuration(turno).toFixed(1)}h
         </span>
       </div>
       {showSucursal && (
-        <p className="mt-1 flex items-center gap-1 text-[10px] opacity-75 truncate">
-          <MapPinIcon className="h-3 w-3 shrink-0" />
+        <p className="mt-0.5 flex items-center gap-1 text-[9px] opacity-75 truncate">
+          <MapPinIcon className="h-2.5 w-2.5 shrink-0" />
           {turno.nombre_sucursal || `Sucursal #${turno.sucursal}`}
         </p>
       )}
@@ -203,7 +203,7 @@ function ShiftBlock({ turno, showSucursal, onClick }) {
 
 function DayCell({ turnos, emptyLabel, showSucursal, onEditShift }) {
   return (
-    <div className="flex min-h-[140px] flex-col gap-2 rounded-lg border border-gray-100 bg-gray-50/40 p-2">
+    <div className="flex min-h-[90px] flex-col gap-1.5 rounded-lg border border-gray-100 bg-gray-50/40 p-1.5">
       {turnos.length === 0 ? (
         <div className="flex flex-1 items-center justify-center text-center text-[10px] text-gray-800">
           {emptyLabel}
@@ -412,6 +412,26 @@ export default function Horarios() {
   const weekLabel = getWeekRangeLabel(weekOffset);
   const weekDates = getWeekDays(weekOffset);
 
+  const getEligibleUnassigned = (dayLabel, isoDate) => {
+    // Normalizar a lowercase quitando tildes (por si acaso)
+    const normalize = (str) => str.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const diaObj = diasList.find(d => normalize(d.dia) === normalize(dayLabel));
+    if (!diaObj) return [];
+    
+    // Todos los empleados que trabajan este día
+    const elegibles = empleadosList.filter(emp => 
+      emp.is_active && 
+      emp.configuracion_laboral?.dias_laborales?.includes(diaObj.id)
+    );
+
+    // Todos los que YA tienen turno ese día (en cualquier sucursal)
+    const asignadosIds = horarios
+      .filter(t => t.fecha === isoDate)
+      .map(t => t.empleado);
+
+    return elegibles.filter(emp => !asignadosIds.includes(emp.id));
+  };
+
   return (
     <div className="w-full h-full py-2 px-4 md:px-6">
       <div className="w-full">
@@ -541,6 +561,34 @@ export default function Horarios() {
                         );
                       })}
                     </div>
+                    </div>
+
+                    {/* Disponibles Rows */}
+                    {isAdmin && (
+                      <div className="mt-4 flex flex-col gap-2 border-t border-gray-200 pt-3">
+                        <h4 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                          Elegibles sin asignar
+                        </h4>
+                        <div className="grid grid-cols-7 gap-3">
+                          {DAY_ORDER.map((day) => {
+                            const unassigned = getEligibleUnassigned(day.label, weekDates[day.key].iso);
+                            return (
+                              <div key={day.key} className="flex min-h-[60px] flex-col gap-1 rounded-lg border border-dashed border-gray-200 bg-white p-1.5">
+                                {unassigned.length === 0 ? (
+                                  <div className="text-[9px] text-gray-400 text-center flex-1 flex items-center justify-center">Ninguno</div>
+                                ) : (
+                                  unassigned.map(emp => (
+                                    <div key={emp.id} className="text-[10px] px-1.5 py-1 rounded bg-gray-50 border border-gray-100 text-gray-600 truncate text-center">
+                                      {emp.nombre || emp.username}
+                                    </div>
+                                  ))
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </motion.div>
                 </AnimatePresence>
               </div>

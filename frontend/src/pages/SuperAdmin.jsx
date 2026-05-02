@@ -14,7 +14,6 @@ const SuperAdmin = () => {
   }, []);
 
   const fetchData = async () => {
-    setLoading(true);
     try {
       const [empresasRes, usuariosRes] = await Promise.all([
         api.get('/empresa/empresas/'),
@@ -24,7 +23,6 @@ const SuperAdmin = () => {
       setUsuarios(usuariosRes.data);
     } catch (error) {
       console.error('Error fetching data', error);
-      alert('Error cargando datos');
     } finally {
       setLoading(false);
     }
