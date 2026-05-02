@@ -1,0 +1,5 @@
+[phases.install]
+cmds = ["python -m venv /opt/venv", ". /opt/venv/bin/activate && pip install -r requirements.txt"]
+
+[phases.build]
+cmds = [". /opt/venv/bin/activate && python manage.py collectstatic --no-input"]
