@@ -1,8 +1,0 @@
-[build]
-builder = "NIXPACKS"
-buildCommand = "pip install -r requirements.txt && python manage.py collectstatic --no-input"
-
-[deploy]
-startCommand = "gunicorn configs.wsgi:application --bind 0.0.0.0:$PORT"
-restartPolicyType = "ON_FAILURE"
-numReplicas = 1
