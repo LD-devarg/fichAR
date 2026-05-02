@@ -25,7 +25,7 @@ from apps.asistencia.views import AsistenciaViewSet
 from apps.core.views import DiaSemanaViewSet
 from apps.horarios.views import HorarioViewSet
 from apps.usuarios.views import UsuarioViewSet, ConfiguracionLaboralViewSet
-from apps.empresa.views import SucursalViewSet
+from apps.empresa.views import SucursalViewSet, EmpresaViewSet
 
 api_router = DefaultRouter()
 # Rutas de Sueldos (RRHH, recibos, botones mágicos)
@@ -39,6 +39,7 @@ api_router.register(r'asistencia', AsistenciaViewSet, basename='asistencia')
 # Rutas de Tablas/Teoría (Configuración general de la franquicia)
 api_router.register(r'horarios', HorarioViewSet, basename='horario')
 api_router.register(r'empresa/sucursales', SucursalViewSet, basename='sucursal')
+api_router.register(r'empresa/empresas', EmpresaViewSet, basename='empresa')
 api_router.register(r'core/dias-semana', DiaSemanaViewSet, basename='dia-semana')
 
 # Rutas del Núcleo (Gestión de los humanos y sus turnos deseados)

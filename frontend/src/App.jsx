@@ -8,6 +8,7 @@ import Horarios from './pages/Horarios';
 import Asistencias from './pages/Asistencias';
 import Sueldos from './pages/Sueldos';
 import AdminPanel from './pages/AdminPanel';
+import SuperAdmin from './pages/SuperAdmin';
 import { AuthProvider } from './context/AuthContext';
 import { AuthContext } from './context/auth-context';
 
@@ -33,6 +34,18 @@ const AdminRoute = ({ children }) => {
   return isAdmin ? children : <Navigate to="/dashboard" replace />;
 };
 
+const SuperAdminRoute = ({ children }) => {
+  const { user, loading } = useContext(AuthContext);
+
+  if (loading) {
+    return <div className="h-screen flex items-center justify-center">Cargando Sistema...</div>;
+  }
+
+  if (!user) return <Navigate to="/login" replace />;
+
+  return user.is_superuser ? children : <Navigate to="/dashboard" replace />;
+};
+
 function App() {
   return (
     <AuthProvider>
@@ -50,6 +63,8 @@ function App() {
           <Route path="/dashboard/admin" element={<AdminRoute><AdminLayout /></AdminRoute>}>
             <Route index element={<AdminPanel />} />
           </Route>
+
+          <Route path="/superadmin" element={<SuperAdminRoute><SuperAdmin /></SuperAdminRoute>} />
 
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>

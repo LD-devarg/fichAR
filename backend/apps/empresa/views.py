@@ -1,11 +1,16 @@
-from rest_framework import viewsets
+from rest_framework import viewsets, permissions
 from rest_framework.exceptions import ValidationError
 
 from apps.core.tenancy import scope_queryset_to_user_empresa
 from apps.usuarios.permissions import IsAdminUserRole
 
-from .models import Sucursal
-from .serializers import SucursalSerializer
+from .models import Sucursal, Empresa
+from .serializers import SucursalSerializer, EmpresaSerializer
+
+class EmpresaViewSet(viewsets.ModelViewSet):
+    serializer_class = EmpresaSerializer
+    permission_classes = [permissions.IsAdminUser] # Solo superuser o is_staff
+    queryset = Empresa.objects.all()
 
 class SucursalViewSet(viewsets.ModelViewSet):
     serializer_class = SucursalSerializer

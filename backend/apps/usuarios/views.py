@@ -37,16 +37,13 @@ class UsuarioViewSet(viewsets.ModelViewSet):
         serializer.save(empresa=empresa)
 
     def perform_update(self, serializer):
-        empresa = self.request.user.empresa
-        if self.request.user.is_superuser and not empresa:
-            from apps.empresa.models import Empresa
-            empresa = Empresa.objects.first()
-            
-        # We only assign empresa if it doesn't have one or if we are forcing it, 
-        # but for updates it's better to keep the existing empresa if the user already has one.
-        if serializer.instance.empresa:
-            empresa = serializer.instance.empresa
-            
+        if self.request.user.is_superuser:
+            empresa = serializer.validated_data.get('empresa', serializer.instance.empresa)
+        else:
+            empresa = self.request.user.empresa
+            if serializer.instance.empresa:
+                empresa = serializer.instance.empresa
+                
         serializer.save(empresa=empresa)
 
 
