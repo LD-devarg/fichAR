@@ -2,6 +2,7 @@ import os
 import sys
 from datetime import timedelta
 from pathlib import Path
+from urllib.parse import parse_qs, unquote, urlparse
 
 from dotenv import load_dotenv
 
@@ -13,6 +14,43 @@ load_dotenv(BASE_DIR / ".env")
 def get_env_list(name, default=""):
     value = os.getenv(name, default)
     return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def get_database_config():
+    database_url = os.getenv("DATABASE_URL")
+
+    if database_url:
+        parsed = urlparse(database_url)
+        query = parse_qs(parsed.query)
+        sslmode = query.get("sslmode", [os.getenv("DB_SSLMODE", "require")])[0]
+
+        return {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': unquote(parsed.path.lstrip('/')),
+            'USER': unquote(parsed.username or ''),
+            'PASSWORD': unquote(parsed.password or ''),
+            'HOST': parsed.hostname or '',
+            'PORT': parsed.port or 5432,
+            'CONN_MAX_AGE': int(os.getenv("DB_CONN_MAX_AGE", "60")),
+            'OPTIONS': {
+                'sslmode': sslmode,
+                'options': os.getenv("DB_OPTIONS", ""),
+            },
+        }
+
+    return {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.getenv("DB_NAME", os.getenv("POSTGRES_DB", "postgres")),
+        'USER': os.getenv("DB_USER", os.getenv("POSTGRES_USER", "postgres")),
+        'PASSWORD': os.getenv("DB_PASSWORD", os.getenv("POSTGRES_PASSWORD", "")),
+        'HOST': os.getenv("DB_HOST", os.getenv("POSTGRES_HOST", "localhost")),
+        'PORT': int(os.getenv("DB_PORT", os.getenv("POSTGRES_PORT", "5432"))),
+        'CONN_MAX_AGE': int(os.getenv("DB_CONN_MAX_AGE", "60")),
+        'OPTIONS': {
+            'sslmode': os.getenv("DB_SSLMODE", "require"),
+            'options': os.getenv("DB_OPTIONS", ""),
+        },
+    }
 
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "django-insecure-dev-only")
 
@@ -97,19 +135,7 @@ AUTH_USER_MODEL = "usuarios.Usuario"
 
 # Base de datos PostgreSQL
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.getenv("DB_NAME", "postgres"),
-        'USER': os.getenv("DB_USER", "postgres"),
-        'PASSWORD': os.getenv("DB_PASSWORD", ""),
-        'HOST': os.getenv("DB_HOST", "localhost"),
-        'PORT': int(os.getenv("DB_PORT", "5432")),
-        'CONN_MAX_AGE': int(os.getenv("DB_CONN_MAX_AGE", "60")),
-        'OPTIONS': {
-            'sslmode': os.getenv("DB_SSLMODE", "require"),
-            'options': os.getenv("DB_OPTIONS", ""),
-        },
-    }
+    'default': get_database_config()
 }
 
 if 'test' in sys.argv or os.getenv("DJANGO_USE_SQLITE_FOR_TESTS", "False").lower() == "true":
