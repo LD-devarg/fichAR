@@ -561,7 +561,6 @@ export default function Horarios() {
                         );
                       })}
                     </div>
-                    </div>
 
                     {/* Disponibles Rows */}
                     {isAdmin && (
