@@ -1,6 +1,7 @@
 import React, { useContext, useEffect, useState } from 'react';
 import { AuthContext } from '../context/auth-context';
 import api from '../services/api';
+import { CATALOG_TTL_MS, SHORT_TTL_MS, cachedGet, invalidateCache } from '../services/requestCache';
 import { ChevronLeftIcon, ChevronRightIcon, ClockIcon, MapPinIcon, CheckCircleIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 import { CircularProgress } from '@mui/material';
 
@@ -48,16 +49,16 @@ export default function Asistencias() {
   const fetchAsistencia = async (targetIsoDate) => {
     try {
       setLoading(true);
-      const [asistRes, horRes, sucRes] = await Promise.all([
-        api.get(`asistencia/?fecha=${targetIsoDate}`),
-        api.get(`horarios/?fecha=${targetIsoDate}`),
-        api.get('empresa/sucursales/')
+      const [asistenciasData, horariosData, sucursalesData] = await Promise.all([
+        cachedGet(`asistencia/?fecha=${targetIsoDate}`, { ttl: SHORT_TTL_MS }),
+        cachedGet(`horarios/?fecha=${targetIsoDate}`, { ttl: SHORT_TTL_MS }),
+        cachedGet('empresa/sucursales/', { ttl: CATALOG_TTL_MS })
       ]);
-      setAsistencias(asistRes.data);
-      setHorarios(horRes.data);
-      setSucursales(sucRes.data);
-      if (sucRes.data.length > 0) {
-        setSelectedSucursal(sucRes.data[0].id);
+      setAsistencias(asistenciasData);
+      setHorarios(horariosData);
+      setSucursales(sucursalesData);
+      if (sucursalesData.length > 0) {
+        setSelectedSucursal(sucursalesData[0].id);
       }
     } catch (err) {
       console.error(err);
@@ -90,6 +91,7 @@ export default function Asistencias() {
         sucursal: selectedSucursal,
         tipo_fichada: tipo
       });
+      invalidateCache(`asistencia/?fecha=${isoDate}`);
       setAsistencias(prev => [res.data, ...prev]);
     } catch (err) {
       const msgs = err.response?.data ? Object.values(err.response.data).flat().join(', ') : 'Error al registrar fichaje.';

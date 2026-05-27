@@ -10,14 +10,14 @@ from .serializers import SucursalSerializer, EmpresaSerializer
 class EmpresaViewSet(viewsets.ModelViewSet):
     serializer_class = EmpresaSerializer
     permission_classes = [permissions.IsAdminUser] # Solo superuser o is_staff
-    queryset = Empresa.objects.all()
+    queryset = Empresa.objects.select_related('administrador').all()
 
 class SucursalViewSet(viewsets.ModelViewSet):
     serializer_class = SucursalSerializer
     permission_classes = [IsAdminUserRole]
 
     def get_queryset(self):
-        return scope_queryset_to_user_empresa(Sucursal.objects.all(), self.request.user)
+        return scope_queryset_to_user_empresa(Sucursal.objects.select_related('empresa'), self.request.user)
 
     def perform_create(self, serializer):
         empresa = self.request.user.empresa

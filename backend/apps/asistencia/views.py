@@ -15,7 +15,10 @@ class AsistenciaViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        qs = scope_queryset_to_user_empresa(Asistencia.objects.all(), user)
+        qs = scope_queryset_to_user_empresa(
+            Asistencia.objects.select_related('empleado', 'sucursal', 'empresa'),
+            user,
+        )
 
         if not (user.is_superuser or user.groups.filter(name='Admin').exists()):
             qs = qs.filter(empleado=user)

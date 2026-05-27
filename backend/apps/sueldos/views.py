@@ -20,7 +20,18 @@ class LiquidacionViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        qs = scope_queryset_to_user_empresa(Liquidacion.objects.all(), user)
+        qs = scope_queryset_to_user_empresa(
+            Liquidacion.objects.select_related(
+                'empleado',
+                'empresa',
+                'modificado_por',
+            ).prefetch_related(
+                'conceptos',
+                'detalle_horas__sucursal',
+                'detalle_horas__horario',
+            ),
+            user,
+        )
 
         if user.is_superuser or user.groups.filter(name='Admin').exists():
             return qs
@@ -85,7 +96,12 @@ class LiquidacionDetalleHorasViewSet(viewsets.ReadOnlyModelViewSet):
         user = self.request.user
         liquidacion_id = self.request.query_params.get('liquidacion_id', None)
         qs = scope_queryset_to_user_empresa(
-            LiquidacionDetalleHoras.objects.all(),
+            LiquidacionDetalleHoras.objects.select_related(
+                'liquidacion',
+                'liquidacion__empleado',
+                'sucursal',
+                'horario',
+            ),
             user,
             field_name='liquidacion__empresa',
         )
@@ -109,7 +125,7 @@ class LiquidacionConceptoViewSet(viewsets.ModelViewSet):
         user = self.request.user
         liquidacion_id = self.request.query_params.get('liquidacion_id', None)
         qs = scope_queryset_to_user_empresa(
-            LiquidacionConcepto.objects.all(),
+            LiquidacionConcepto.objects.select_related('liquidacion', 'liquidacion__empleado'),
             user,
             field_name='liquidacion__empresa',
         )

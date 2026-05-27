@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
+import { CATALOG_TTL_MS, cachedGet, invalidateCache } from '../services/requestCache';
 
 const SuperAdmin = () => {
   const [empresas, setEmpresas] = useState([]);
@@ -16,11 +17,11 @@ const SuperAdmin = () => {
   const fetchData = async () => {
     try {
       const [empresasRes, usuariosRes] = await Promise.all([
-        api.get('/empresa/empresas/'),
-        api.get('/usuarios/')
+        cachedGet('/empresa/empresas/', { ttl: CATALOG_TTL_MS }),
+        cachedGet('/usuarios/', { ttl: CATALOG_TTL_MS })
       ]);
-      setEmpresas(empresasRes.data);
-      setUsuarios(usuariosRes.data);
+      setEmpresas(empresasRes);
+      setUsuarios(usuariosRes);
     } catch (error) {
       console.error('Error fetching data', error);
     } finally {
@@ -34,6 +35,7 @@ const SuperAdmin = () => {
     
     try {
       await api.post('/empresa/empresas/', { nombre: nuevaEmpresa });
+      invalidateCache(['empresa/empresas/', 'empresa/sucursales/']);
       setNuevaEmpresa('');
       fetchData();
       alert('Empresa creada correctamente');
@@ -48,6 +50,7 @@ const SuperAdmin = () => {
       await api.patch(`/empresa/empresas/${empresaId}/`, {
         administrador: adminId || null
       });
+      invalidateCache('empresa/empresas/');
       fetchData();
       alert('Administrador asignado correctamente');
     } catch (error) {
@@ -61,6 +64,7 @@ const SuperAdmin = () => {
       await api.patch(`/usuarios/${usuarioId}/`, {
         empresa: empresaId || null
       });
+      invalidateCache(['usuarios/', 'empresa/sucursales/', 'horarios/']);
       fetchData();
       alert('Empresa reasignada correctamente');
     } catch (error) {

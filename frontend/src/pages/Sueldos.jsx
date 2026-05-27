@@ -1,6 +1,7 @@
 import React, { useContext, useEffect, useState } from 'react';
 import { AuthContext } from '../context/auth-context';
 import api from '../services/api';
+import { CATALOG_TTL_MS, SHORT_TTL_MS, cachedGet, invalidateCache } from '../services/requestCache';
 import { CurrencyDollarIcon, DocumentTextIcon, CheckBadgeIcon, ExclamationCircleIcon, PlusCircleIcon } from '@heroicons/react/24/outline';
 import { CircularProgress, Autocomplete, TextField } from '@mui/material';
 
@@ -52,12 +53,12 @@ export default function Sueldos() {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const res = await api.get('sueldos/liquidaciones/');
-      setLiquidaciones(res.data);
+      const liquidacionesData = await cachedGet('sueldos/liquidaciones/', { ttl: SHORT_TTL_MS });
+      setLiquidaciones(liquidacionesData);
 
       if (isAdmin) {
-        const empRes = await api.get('usuarios/');
-        setEmpleados(empRes.data);
+        const empleadosData = await cachedGet('usuarios/', { ttl: CATALOG_TTL_MS });
+        setEmpleados(empleadosData);
       }
     } catch (err) {
       console.error(err);
@@ -90,6 +91,7 @@ export default function Sueldos() {
         periodo_anio: parseInt(formData.periodo_anio),
       };
       const res = await api.post('sueldos/liquidaciones/', payload);
+      invalidateCache('sueldos/liquidaciones/');
       setLiquidaciones([res.data, ...liquidaciones]);
       setIsModalOpen(false);
     } catch (err) {
@@ -104,6 +106,7 @@ export default function Sueldos() {
     setLoadingDetalles(true);
     try {
       const res = await api.post(`sueldos/liquidaciones/${id}/generar_detalles/`);
+      invalidateCache('sueldos/liquidaciones/');
       setLiquidaciones(liquidaciones.map(liq => liq.id === id ? res.data : liq));
       if (selectedLiquidacion?.id === id) setSelectedLiquidacion(res.data);
     } catch (err) {
@@ -117,6 +120,7 @@ export default function Sueldos() {
     setLoadingStatus(newStatus);
     try {
       const res = await api.patch(`sueldos/liquidaciones/${id}/`, { estado: newStatus });
+      invalidateCache('sueldos/liquidaciones/');
       setLiquidaciones(liquidaciones.map(liq => liq.id === id ? res.data : liq));
       if (selectedLiquidacion?.id === id) {
         setSelectedLiquidacion(res.data);
@@ -139,6 +143,7 @@ export default function Sueldos() {
         descripcion: conceptoForm.descripcion,
         monto: parseFloat(conceptoForm.monto)
       });
+      invalidateCache('sueldos/liquidaciones/');
       // Refresh liquidacion to get new totals and new list of conceptos
       const res = await api.get(`sueldos/liquidaciones/${selectedLiquidacion.id}/`);
       setSelectedLiquidacion(res.data);
@@ -154,6 +159,7 @@ export default function Sueldos() {
   const handleDeleteConcepto = async (conceptoId) => {
     try {
       await api.delete(`sueldos/conceptos/${conceptoId}/`);
+      invalidateCache('sueldos/liquidaciones/');
       const res = await api.get(`sueldos/liquidaciones/${selectedLiquidacion.id}/`);
       setSelectedLiquidacion(res.data);
       setLiquidaciones(liquidaciones.map(liq => liq.id === res.data.id ? res.data : liq));

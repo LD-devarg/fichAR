@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useState } from 'react';
+import React, { useContext, useEffect, useRef, useState } from 'react';
 import { CircularProgress, Autocomplete, TextField } from '@mui/material';
 import {
   BuildingStorefrontIcon,
@@ -16,6 +16,7 @@ import {
 
 import { motion, AnimatePresence } from 'motion/react';
 import api from '../services/api';
+import { CATALOG_TTL_MS, SHORT_TTL_MS, cachedGet, invalidateCache } from '../services/requestCache';
 import { AuthContext } from '../context/auth-context';
 
 const DAY_ORDER = [
@@ -257,6 +258,8 @@ export default function Horarios() {
   const [deletedIds, setDeletedIds] = useState([]);
   const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const employeeInputRefs = useRef(new Map());
+  const pendingEmployeeFocusKey = useRef(null);
 
   // API Data
   const [empleadosList, setEmpleadosList] = useState([]);
@@ -266,8 +269,8 @@ export default function Horarios() {
   const fetchHorarios = async (startDate, endDate) => {
     try {
       setLoading(true);
-      const res = await api.get(`horarios/?start_date=${startDate}&end_date=${endDate}`);
-      setHorarios(res.data);
+      const data = await cachedGet(`horarios/?start_date=${startDate}&end_date=${endDate}`, { ttl: SHORT_TTL_MS });
+      setHorarios(data);
     } catch (error) {
       console.error(error);
     } finally {
@@ -278,14 +281,14 @@ export default function Horarios() {
   const fetchAuxData = async () => {
     try {
       if (isAdmin) {
-        const [empleadosRes, diasRes, sucursalesRes] = await Promise.all([
-          api.get('usuarios/'),
-          api.get('core/dias-semana/'),
-          api.get('empresa/sucursales/'),
+        const [empleadosData, diasData, sucursalesData] = await Promise.all([
+          cachedGet('usuarios/', { ttl: CATALOG_TTL_MS }),
+          cachedGet('core/dias-semana/', { ttl: CATALOG_TTL_MS }),
+          cachedGet('empresa/sucursales/', { ttl: CATALOG_TTL_MS }),
         ]);
-        setEmpleadosList(empleadosRes.data);
-        setDiasList(diasRes.data);
-        setSucursalesList(sucursalesRes.data);
+        setEmpleadosList(empleadosData);
+        setDiasList(diasData);
+        setSucursalesList(sucursalesData);
       }
     } catch (err) {
       console.error(err);
@@ -339,7 +342,25 @@ export default function Horarios() {
     }));
   };
 
-  const addRow = () => setDayForm(prev => ({ ...prev, rows: [...prev.rows, newRow()] }));
+  const addRow = () => {
+    const row = newRow();
+    pendingEmployeeFocusKey.current = row._key;
+    setDayForm(prev => ({ ...prev, rows: [...prev.rows, row] }));
+  };
+
+  useEffect(() => {
+    const focusKey = pendingEmployeeFocusKey.current;
+    if (!isModalOpen || !focusKey) return undefined;
+
+    const timer = window.setTimeout(() => {
+      const input = employeeInputRefs.current.get(focusKey);
+      input?.focus();
+      input?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      pendingEmployeeFocusKey.current = null;
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [dayForm.rows, isModalOpen]);
 
   const removeRow = (key) => {
     const row = dayForm.rows.find(r => r._key === key);
@@ -373,9 +394,11 @@ export default function Horarios() {
         try {
           if (row.id) {
             const res = await api.put(`horarios/${row.id}/`, payload);
+            invalidateCache('horarios/');
             setHorarios(prev => prev.map(t => t.id === row.id ? res.data : t));
           } else {
             const res = await api.post('horarios/', payload);
+            invalidateCache('horarios/');
             setHorarios(prev => [...prev, res.data]);
           }
         } catch (err) {
@@ -387,6 +410,7 @@ export default function Horarios() {
 
       // 3. Remove deleted turnos from local state
       if (deletedIds.length) {
+        invalidateCache('horarios/');
         setHorarios(prev => prev.filter(t => !deletedIds.includes(t.id)));
       }
 
@@ -655,6 +679,13 @@ export default function Horarios() {
                           size="small"
                           renderInput={(params) => (
                             <TextField {...params} placeholder="Empleado" size="small"
+                              inputRef={(input) => {
+                                if (input) {
+                                  employeeInputRefs.current.set(row._key, input);
+                                } else {
+                                  employeeInputRefs.current.delete(row._key);
+                                }
+                              }}
                               sx={{ '& .MuiOutlinedInput-root': { borderRadius: '10px', backgroundColor: '#f9fafb', fontSize: '13px' } }}
                             />
                           )}
@@ -736,4 +767,3 @@ export default function Horarios() {
     </div>
   );
 }
-

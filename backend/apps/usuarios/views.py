@@ -17,7 +17,14 @@ class UsuarioViewSet(viewsets.ModelViewSet):
     serializer_class = UsuarioSerializer
 
     def get_queryset(self):
-        return scope_queryset_to_user_empresa(Usuario.objects.all(), self.request.user)
+        queryset = Usuario.objects.select_related(
+            'empresa',
+            'configuracion_laboral',
+        ).prefetch_related(
+            'groups',
+            'configuracion_laboral__dias_laborales',
+        )
+        return scope_queryset_to_user_empresa(queryset, self.request.user)
 
     def get_permissions(self):
         if self.action in ['me']:
@@ -53,7 +60,7 @@ class ConfiguracionLaboralViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         return scope_queryset_to_user_empresa(
-            ConfiguracionLaboral.objects.select_related('usuario'),
+            ConfiguracionLaboral.objects.select_related('usuario').prefetch_related('dias_laborales'),
             self.request.user,
             field_name='usuario__empresa',
         )

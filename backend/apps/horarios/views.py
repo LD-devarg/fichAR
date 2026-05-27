@@ -14,7 +14,10 @@ class HorarioViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        qs = scope_queryset_to_user_empresa(Horario.objects.all(), user)
+        qs = scope_queryset_to_user_empresa(
+            Horario.objects.select_related('empleado', 'sucursal', 'empresa', 'modificado_por'),
+            user,
+        )
 
         if not (user.is_superuser or user.groups.filter(name='Admin').exists()):
             qs = qs.filter(empleado=user)

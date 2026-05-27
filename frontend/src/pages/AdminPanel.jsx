@@ -25,6 +25,7 @@ import {
 } from '@heroicons/react/24/outline';
 
 import api from '../services/api';
+import { CATALOG_TTL_MS, cachedGet, invalidateCache } from '../services/requestCache';
 
 function TabPanel(props) {
   const { children, value, index, ...other } = props;
@@ -76,15 +77,15 @@ export default function AdminPanel() {
   const fetchPanelData = async () => {
     try {
       setLoading(true);
-      const [sucursalesRes, usuariosRes, diasRes] = await Promise.all([
-        api.get('empresa/sucursales/'),
-        api.get('usuarios/'),
-        api.get('core/dias-semana/'),
+      const [sucursalesData, usuariosData, diasData] = await Promise.all([
+        cachedGet('empresa/sucursales/', { ttl: CATALOG_TTL_MS }),
+        cachedGet('usuarios/', { ttl: CATALOG_TTL_MS }),
+        cachedGet('core/dias-semana/', { ttl: CATALOG_TTL_MS }),
       ]);
 
-      setSucursales(sucursalesRes.data);
-      setUsuarios(usuariosRes.data);
-      setDiasSemana(diasRes.data);
+      setSucursales(sucursalesData);
+      setUsuarios(usuariosData);
+      setDiasSemana(diasData);
     } catch (error) {
       console.error(error);
     } finally {
@@ -103,6 +104,7 @@ export default function AdminPanel() {
 
     try {
       const { data } = await api.post('empresa/sucursales/', sucursalForm);
+      invalidateCache('empresa/sucursales/');
       setSucursales((current) => [...current, data].sort((a, b) => a.nombre.localeCompare(b.nombre)));
       setSucursalForm(initialSucursalForm);
       setSucursalMessage({ type: 'success', text: 'Sucursal creada correctamente.' });
@@ -203,6 +205,7 @@ export default function AdminPanel() {
       const { data } = editingUsuario
         ? await api.patch(`usuarios/${editingUsuario.id}/`, payload)
         : await api.post('usuarios/', payload);
+      invalidateCache(['usuarios/', 'horarios/']);
       setUsuarios((current) => {
         const next = editingUsuario
           ? current.map((usuario) => (usuario.id === data.id ? data : usuario))

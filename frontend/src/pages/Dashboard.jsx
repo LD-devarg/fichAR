@@ -1,8 +1,39 @@
-import React, { useContext, useState, useEffect } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { AuthContext } from '../context/auth-context';
-import { BuildingStorefrontIcon, UsersIcon, ClockIcon } from '@heroicons/react/24/outline';
-import api from '../services/api';
+import {
+  BuildingStorefrontIcon,
+  CalendarDaysIcon,
+  ClockIcon,
+  MapPinIcon,
+  UsersIcon,
+} from '@heroicons/react/24/outline';
+import { CATALOG_TTL_MS, SHORT_TTL_MS, cachedGet } from '../services/requestCache';
 import { CircularProgress } from '@mui/material';
+
+function toIsoDate(date) {
+  return `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`;
+}
+
+function addDays(date, days) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function getShiftStart(turno) {
+  return new Date(`${turno.fecha}T${turno.hora_inicio}`);
+}
+
+function sortShifts(a, b) {
+  return getShiftStart(a) - getShiftStart(b);
+}
+
+const dayFormatter = new Intl.DateTimeFormat('es-AR', {
+  weekday: 'short',
+  day: '2-digit',
+  month: '2-digit',
+});
 
 function AdminDashboard() {
   const [sucursales, setSucursales] = useState([]);
@@ -15,18 +46,18 @@ function AdminDashboard() {
     const fetchData = async () => {
       try {
         const todayDate = new Date();
-        const todayIso = `${todayDate.getFullYear()}-${(todayDate.getMonth() + 1).toString().padStart(2, '0')}-${todayDate.getDate().toString().padStart(2, '0')}`;
-        
-        const [sucRes, horRes, usuRes, diasRes] = await Promise.all([
-          api.get('empresa/sucursales/'),
-          api.get(`horarios/?fecha=${todayIso}`),
-          api.get('usuarios/'),
-          api.get('core/dias-semana/')
+        const todayIso = toIsoDate(todayDate);
+
+        const [sucursalesData, horariosData, usuariosData, diasData] = await Promise.all([
+          cachedGet('empresa/sucursales/', { ttl: CATALOG_TTL_MS }),
+          cachedGet(`horarios/?fecha=${todayIso}`, { ttl: SHORT_TTL_MS }),
+          cachedGet('usuarios/', { ttl: CATALOG_TTL_MS }),
+          cachedGet('core/dias-semana/', { ttl: CATALOG_TTL_MS }),
         ]);
-        setSucursales(sucRes.data);
-        setHorarios(horRes.data);
-        setUsuarios(usuRes.data);
-        setDiasSemana(diasRes.data);
+        setSucursales(sucursalesData);
+        setHorarios(horariosData);
+        setUsuarios(usuariosData);
+        setDiasSemana(diasData);
       } catch (err) {
         console.error(err);
       } finally {
@@ -37,20 +68,19 @@ function AdminDashboard() {
   }, []);
 
   const today = new Date();
-  const isoDate = `${today.getFullYear()}-${(today.getMonth() + 1).toString().padStart(2, '0')}-${today.getDate().toString().padStart(2, '0')}`;
-  
+  const isoDate = toIsoDate(today);
+
   const formatter = new Intl.DateTimeFormat('es-AR', { weekday: 'long', day: '2-digit', month: 'long' });
   const displayDate = formatter.format(today);
   const currentDayName = new Intl.DateTimeFormat('es-AR', { weekday: 'long' }).format(today);
 
   const shiftsToday = horarios.filter(h => h.fecha === isoDate);
 
-  // Calcular Elegibles
   const normalize = (str) => str.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   const diaObj = diasSemana.find(d => normalize(d.dia) === normalize(currentDayName));
-  
-  const elegibles = usuarios.filter(emp => 
-    emp.is_active && 
+
+  const elegibles = usuarios.filter(emp =>
+    emp.is_active &&
     diaObj &&
     emp.configuracion_laboral?.dias_laborales?.includes(diaObj.id)
   );
@@ -122,7 +152,6 @@ function AdminDashboard() {
           );
         })}
 
-        {/* Tarjeta de Disponibles */}
         <div className="bg-gray-50 rounded-xl border border-dashed border-gray-300 overflow-hidden flex flex-col">
           <div className="p-3 border-b border-gray-200/60 flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -153,53 +182,130 @@ function AdminDashboard() {
             )}
           </div>
         </div>
-
       </div>
     </div>
   );
 }
 
 function EmployeeDashboard({ user }) {
+  const [turnos, setTurnos] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchTurnos = async () => {
+      try {
+        setLoading(true);
+        const today = new Date();
+        const startDate = toIsoDate(today);
+        const endDate = toIsoDate(addDays(today, 14));
+        const data = await cachedGet(`horarios/?start_date=${startDate}&end_date=${endDate}`, { ttl: SHORT_TTL_MS });
+        setTurnos([...data].sort(sortShifts));
+      } catch (error) {
+        console.error(error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchTurnos();
+  }, []);
+
+  const now = new Date();
+  const proximoTurno = turnos.find((turno) => getShiftStart(turno) >= now) || turnos[0] || null;
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-24">
+        <CircularProgress size={32} sx={{ color: '#111111' }} />
+      </div>
+    );
+  }
+
   return (
     <div className="w-full h-full py-2 px-4 md:px-6">
-      <h1 className="text-3xl font-light text-gray-900 mb-8 tracking-tight">Bienvenido, {user?.nombre || user?.username || 'Usuario'}</h1>
+      <h1 className="text-xl font-light text-gray-900 mb-8 tracking-tight">Bienvenido, {user?.nombre || user?.username || 'Usuario'}</h1>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        {/* KPI 1 */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
         <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm flex flex-col justify-between">
-          <p className="text-xs text-gray-400 font-light uppercase tracking-widest mb-1.5">Horas Semanales</p>
-          <div className="flex items-baseline gap-2">
-            <p className="text-4xl font-light text-gray-900">38.5</p>
-            <span className="text-sm font-light text-gray-500">/ 45 hs</span>
-          </div>
+          <p className="text-xs text-gray-400 font-light uppercase tracking-widest mb-3">Próximo Turno</p>
+          {proximoTurno ? (
+            <>
+              <p className="text-3xl font-light text-gray-900">
+                {dayFormatter.format(new Date(`${proximoTurno.fecha}T00:00:00`))}
+              </p>
+              <div className="mt-3 space-y-1 text-sm text-gray-500 font-light">
+                <p className="flex items-center gap-2">
+                  <ClockIcon className="w-4 h-4" />
+                  {proximoTurno.hora_inicio.slice(0, 5)} - {proximoTurno.hora_fin.slice(0, 5)}
+                </p>
+                <p className="flex items-center gap-2">
+                  <MapPinIcon className="w-4 h-4" />
+                  {proximoTurno.nombre_sucursal || 'Sucursal sin nombre'}
+                </p>
+              </div>
+            </>
+          ) : (
+            <p className="text-sm text-gray-500 font-light">Sin turnos asignados.</p>
+          )}
         </div>
 
-        {/* KPI 2 */}
-        <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm flex flex-col justify-between">
-          <p className="text-xs text-gray-400 font-light uppercase tracking-widest mb-1.5">Próximo Turno</p>
-          <p className="text-3xl font-light text-gray-900">Mañ, 09:00</p>
-          <p className="text-sm text-gray-500 font-light mt-1">Sucursal Centro</p>
-        </div>
-
-        {/* Acción Rápida */}
         <div className="bg-[#111111] p-6 rounded-xl shadow-md text-white flex flex-col justify-center">
           <p className="text-xs text-gray-400 font-light uppercase tracking-widest mb-4">Reloj de Ingreso</p>
-          <button className="w-full bg-white text-black font-medium text-sm py-2.5 px-4 rounded-lg hover:bg-gray-100 transition-colors shadow-sm">
+          <Link to="/dashboard/asistencia" className="w-full bg-white text-black font-medium text-sm py-2.5 px-4 rounded-lg hover:bg-gray-100 transition-colors shadow-sm text-center">
             Ir a Fichaje
-          </button>
+          </Link>
         </div>
       </div>
 
-      {/* Bloque Extra Minimalista */}
-      <div className="bg-white rounded-xl border border-gray-100 p-8 shadow-sm">
-        <h3 className="text-lg font-light text-gray-800 mb-4">Avisos Recientes</h3>
-        <div className="py-3 border-b border-gray-50">
-          <p className="text-sm font-medium text-gray-800">Recibo de Sueldo (Abril) generado.</p>
-          <p className="text-xs text-gray-500 font-light mt-0.5">Hace 2 horas</p>
+      <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-6">
+        <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+            <div>
+              <h2 className="text-lg font-light text-gray-900">Mis turnos</h2>
+              <p className="text-xs text-gray-500 mt-1">Próximos 14 días</p>
+            </div>
+            <CalendarDaysIcon className="w-5 h-5 text-gray-400" />
+          </div>
+
+          {turnos.length === 0 ? (
+            <div className="px-5 py-12 text-center text-[12px] xl:text-[14px] text-gray-500">
+              No tenés turnos asignados para los próximos días.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead className="bg-gray-50 text-[11px] uppercase tracking-wider text-gray-500">
+                  <tr>
+                    <th className="px-5 py-3 font-medium">Día</th>
+                    <th className="px-5 py-3 font-medium">Horario</th>
+                    <th className="px-5 py-3 font-medium">Sucursal</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {turnos.map((turno) => (
+                    <tr key={turno.id} className="text-[12px] xl:text-[14px] text-gray-700">
+                      <td className="px-5 py-3 capitalize">
+                        {dayFormatter.format(new Date(`${turno.fecha}T00:00:00`))}
+                      </td>
+                      <td className="px-5 py-3 text-gray-900">
+                        {turno.hora_inicio.slice(0, 5)} - {turno.hora_fin.slice(0, 5)}
+                      </td>
+                      <td className="px-5 py-3">
+                        {turno.nombre_sucursal || 'Sin sucursal'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
-        <div className="py-3">
-          <p className="text-sm font-medium text-gray-800">Cambio de Horario Sábado.</p>
-          <p className="text-xs text-gray-500 font-light mt-0.5">La apertura será a las 10:00.</p>
+
+        <div className="bg-white rounded-xl border border-gray-100 p-6 shadow-sm">
+          <h3 className="text-lg font-light text-gray-800 mb-4">Avisos Recientes</h3>
+          <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 px-4 py-8 text-center">
+            <p className="text-sm text-gray-500">Sin avisos por el momento.</p>
+          </div>
         </div>
       </div>
     </div>

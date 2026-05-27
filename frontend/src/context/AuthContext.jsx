@@ -30,8 +30,14 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (username, password) => {
     try {
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('refresh_token');
+
       // 1. Pedir tokens a SimpleJWT
-      const { data } = await api.post('token/', { username, password });
+      const { data } = await api.post('token/', {
+        username: username.trim(),
+        password: password.trim(),
+      });
       
       // 2. Guardarlos localmente
       localStorage.setItem('access_token', data.access);
